@@ -17,71 +17,24 @@ Internally, OpenAPI sources are cataloged from their specs and exposed inside Co
 
 Source configuration is per authenticated user. Each user gets their own source registry, catalog, MCP session Durable Object, and MCP broker Durable Object.
 
+Code Mode runs on [Dynamic Workers](https://developers.cloudflare.com/dynamic-workers/). For background on the model, see Cloudflare's [Code Mode announcement](https://blog.cloudflare.com/code-mode/).
+
 > dev-mcp is similar in spirit to [Cloudflare MCP Server Portals](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/): it centralizes multiple MCP servers behind one authenticated endpoint. This project is intentionally smaller, easier to self-deploy, and aimed at individuals or small personal workspaces rather than organization-wide Zero Trust governance.
 
 ## Stack
 
-- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
-- [Cloudflare D1](https://developers.cloudflare.com/d1/) with [Drizzle](https://orm.drizzle.team/)
-- [Durable Objects](https://developers.cloudflare.com/durable-objects/) for MCP broker/session routing
-- [Worker Loader / Dynamic Workers](https://developers.cloudflare.com/workers/configuration/worker-loaders/) for Code Mode execution
-- [TanStack Start](https://tanstack.com/start/latest)
-- [Better Auth](https://www.better-auth.com/) with OpenID Connect
+- Cloudflare Workers
+- Cloudflare D1 with Drizzle
+- Durable Objects for MCP broker/session routing
+- Worker Loader / Dynamic Workers for Code Mode execution
+- TanStack Start
+- Better Auth with OpenID Connect
 - Better Auth MCP plugin for the remote MCP endpoint
-- [shadcn/ui](https://ui.shadcn.com/)
+- shadcn/ui
 
 ## Architecture
 
-```mermaid
-flowchart TD
-  Browser[Browser UI] --> Dashboard[TanStack Start dashboard]
-  Dashboard --> Login[Login page]
-  Dashboard --> SourceForm[Source form]
-  Dashboard --> SourcesTable[Sources table]
-  Dashboard --> CatalogSearch[Catalog search]
-  Dashboard --> EndpointPanel[MCP endpoint panel]
-
-  Login --> AuthRoutes["/api/auth/*"]
-  AuthRoutes --> BetterAuth[Better Auth OIDC + MCP plugin]
-  BetterAuth --> AuthTables[(D1 auth tables)]
-
-  SourceForm --> ServerFns[TanStack server functions]
-  SourcesTable --> ServerFns
-  CatalogSearch --> ServerFns
-  ServerFns --> RequireAuth[requireAuth]
-  RequireAuth --> Sources[(D1 sources)]
-  ServerFns --> Catalog[(D1 catalog_entries)]
-  ServerFns --> Logs[(D1 execution_logs)]
-
-  ServerFns --> Refresh[refreshSourceCatalog]
-  Refresh --> OpenApiSpec[Fetch OpenAPI spec]
-  Refresh --> BrokerList[MCP_BROKER listTools]
-  OpenApiSpec --> Catalog
-  BrokerList --> Catalog
-
-  SourceForm --> OAuthStart["/api/sources/:slug/oauth/start"]
-  OAuthStart --> BrokerOAuth[MCP_BROKER OAuth client]
-  BrokerOAuth --> OAuthProvider[Upstream OAuth provider]
-  OAuthProvider --> OAuthCallback["/api/sources/:slug/oauth/callback"]
-  OAuthCallback --> EncryptedTokens[Encrypted source OAuth state and tokens]
-  EncryptedTokens --> Sources
-
-  MCPClient[MCP client] --> McpEndpoint["/mcp"]
-  McpEndpoint --> BetterAuth
-  McpEndpoint --> McpSession[MCP_SESSION Durable Object]
-  McpSession --> Gateway[Gateway MCP server]
-  Gateway --> SearchTool[search]
-  Gateway --> ExecuteTool[execute]
-  SearchTool --> CodeModeSearch[Code Mode search helpers]
-  ExecuteTool --> CodeModeExecute[Code Mode execution helpers]
-  CodeModeSearch --> Catalog
-  CodeModeSearch --> CombinedSpec[Combined OpenAPI spec]
-  CodeModeExecute --> OpenApiRequest[OpenAPI request function]
-  CodeModeExecute --> McpTool[MCP tool function]
-  OpenApiRequest --> UserApis[User OpenAPI APIs]
-  McpTool --> BrokerCall[MCP_BROKER callTool]
-  BrokerCall --> UpstreamMCP[User MCP servers]
-```
+![dev-mcp system architecture](./arch.png)
 
 The dashboard is the control plane: it handles sign-in, source registration, source enablement, catalog refreshes, and endpoint discovery. The `/mcp` route is the data plane: it exposes only `search` and `execute`, then fans into user-enabled source functions inside Code Mode.
 
@@ -94,16 +47,6 @@ The dashboard is the control plane: it handles sign-in, source registration, sou
 - Catalog search: searches the user's enabled catalog entries.
 - Endpoint panel: copies the authenticated remote MCP endpoint.
 - OAuth popup flow: MCP OAuth sources open the upstream authorization URL and refresh the catalog after callback completion.
-
-Useful external references:
-
-- [Deploy to Cloudflare buttons](https://developers.cloudflare.com/workers/tutorials/deploy-button/)
-- [Cloudflare MCP Server Portals](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/)
-- [Cloudflare MCP governance](https://developers.cloudflare.com/agents/model-context-protocol/governance/)
-- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
-- [Cloudflare D1](https://developers.cloudflare.com/d1/)
-- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/)
-- [Model Context Protocol TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 
 ## Local Development
 

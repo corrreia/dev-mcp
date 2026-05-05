@@ -3,6 +3,7 @@ import type { RequestOptions, SearchResult, SourceConfig } from "../types";
 import { decryptSecret } from "./crypto";
 
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
+const MAX_UPSTREAM_RESPONSE_BYTES = 1_000_000;
 
 export async function fetchOpenApiSpec(source: SourceConfig, encryptionKey?: string): Promise<Record<string, unknown>> {
   const specUrl = source.specUrl ?? source.baseUrl;
@@ -10,7 +11,7 @@ export async function fetchOpenApiSpec(source: SourceConfig, encryptionKey?: str
   const headers = shouldSendSpecAuth(source, specUrl) ? await authHeaders(source, encryptionKey) : undefined;
   const response = await fetch(specUrl, { headers });
   if (!response.ok) throw new Error(`Failed to fetch ${specUrl}: ${response.status} ${response.statusText}`);
-  const text = await response.text();
+  const text = await readLimitedText(response, `OpenAPI spec for ${source.slug}`);
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
@@ -98,7 +99,7 @@ export async function requestOpenApi(
 
   const response = await fetch(url, { method: options.method, headers, body });
   const contentType = response.headers.get("content-type") ?? "";
-  const text = await response.text();
+  const text = await readLimitedText(response, `Response from ${source.slug}`);
   if (contentType.includes("application/json")) {
     try {
       return JSON.parse(text) as unknown;
@@ -129,4 +130,37 @@ function inputSchemaForOperation(operation: Record<string, unknown>): unknown {
   const requestBody = operation.requestBody as Record<string, unknown> | undefined;
   const content = requestBody?.content as Record<string, { schema?: unknown }> | undefined;
   return content?.["application/json"]?.schema ?? { type: "object" };
+}
+
+async function readLimitedText(response: Response, label: string): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) > MAX_UPSTREAM_RESPONSE_BYTES) {
+    throw new Error(`${label} is too large`);
+  }
+
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_UPSTREAM_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error(`${label} is too large`);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(bytes);
 }

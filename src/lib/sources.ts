@@ -219,6 +219,7 @@ function validateSource(input: SourceInput): void {
   if (input.type === "openapi") {
     if (!input.baseUrl) throw new Error("OpenAPI sources require baseUrl");
     if (!input.specUrl) throw new Error("OpenAPI sources require specUrl");
+    if (input.authType === "oauth") throw new Error("OpenAPI source OAuth is not supported");
   }
   if (input.type === "mcp" && !input.baseUrl) {
     throw new Error("MCP sources require baseUrl");
@@ -229,7 +230,7 @@ function validateSource(input: SourceInput): void {
 
 function validateHttpUrl(value: string, label: string): void {
   const url = new URL(value);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${label} must use http or https`);
+  if (url.protocol !== "https:") {
+    throw new Error(`${label} must use https`);
   }
 }

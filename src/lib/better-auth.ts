@@ -7,7 +7,8 @@ import type { Env } from "../types";
 export type AppAuth = ReturnType<typeof createAuth>;
 
 export function createAuth(env: Env, request: Request) {
-  const origin = env.APP_URL || new URL(request.url).origin;
+  const requestOrigin = new URL(request.url).origin;
+  const origin = env.APP_URL || requestOrigin;
   const plugins = [
     genericOAuth({
       config: [
@@ -29,10 +30,22 @@ export function createAuth(env: Env, request: Request) {
   return betterAuth({
     database: drizzleAdapter(createDb(env.DB), { provider: "sqlite" }),
     baseURL: origin,
-    secret: env.BETTER_AUTH_SECRET ?? env.ENCRYPTION_KEY ?? "dev-mcp-local-secret-change-me-32-chars-minimum",
+    secret: authSecret(env, requestOrigin),
     emailAndPassword: { enabled: false },
     plugins
   });
+}
+
+function authSecret(env: Env, requestOrigin: string): string {
+  const secret = env.BETTER_AUTH_SECRET ?? env.ENCRYPTION_KEY;
+  if (secret) return secret;
+
+  const hostname = new URL(requestOrigin).hostname;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return "dev-mcp-local-secret-change-me-32-chars-minimum";
+  }
+
+  throw new Error("BETTER_AUTH_SECRET or ENCRYPTION_KEY is required");
 }
 
 export async function getUserId(request: Request, env: Env): Promise<string | null> {

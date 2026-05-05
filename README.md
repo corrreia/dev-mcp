@@ -4,6 +4,8 @@
   <img src="./public/favicon.svg" alt="dev-mcp favicon" width="64" height="64" />
 </p>
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/corrreia/dev-mcp)
+
 Cloudflare-native MCP gateway for combining user-added MCP servers and OpenAPI APIs behind one authenticated endpoint.
 
 The app exposes a TanStack Start dashboard for registering sources, then exposes a remote MCP endpoint with only two public tools:
@@ -11,46 +13,97 @@ The app exposes a TanStack Start dashboard for registering sources, then exposes
 - `search`
 - `execute`
 
-Internally, OpenAPI sources are wrapped with `openApiMcpServer`, MCP sources are wrapped with `codeMcpServer`, and execution runs through Cloudflare Code Mode using Dynamic Workers.
+Internally, OpenAPI sources are cataloged from their specs and exposed inside Code Mode as callable functions. MCP sources are connected through a per-user Durable Object broker. Execution runs through Cloudflare Code Mode using Dynamic Workers with outbound network access disabled except for the source functions explicitly provided by the gateway.
+
+Source configuration is per authenticated user. Each user gets their own source registry, catalog, MCP session Durable Object, and MCP broker Durable Object.
+
+> dev-mcp is similar in spirit to [Cloudflare MCP Server Portals](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/): it centralizes multiple MCP servers behind one authenticated endpoint. This project is intentionally smaller, easier to self-deploy, and aimed at individuals or small personal workspaces rather than organization-wide Zero Trust governance.
 
 ## Stack
 
-- Cloudflare Workers
-- Cloudflare D1 with Drizzle
-- Durable Objects for MCP broker/session routing
-- Worker Loader / Dynamic Workers for Code Mode execution
-- TanStack Start
-- Better Auth with OpenID Connect
-- shadcn/ui
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
+- [Cloudflare D1](https://developers.cloudflare.com/d1/) with [Drizzle](https://orm.drizzle.team/)
+- [Durable Objects](https://developers.cloudflare.com/durable-objects/) for MCP broker/session routing
+- [Worker Loader / Dynamic Workers](https://developers.cloudflare.com/workers/configuration/worker-loaders/) for Code Mode execution
+- [TanStack Start](https://tanstack.com/start/latest)
+- [Better Auth](https://www.better-auth.com/) with OpenID Connect
+- Better Auth MCP plugin for the remote MCP endpoint
+- [shadcn/ui](https://ui.shadcn.com/)
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-  User[User] --> UI[TanStack dashboard]
-  UI --> Auth[Better Auth OIDC]
-  UI --> D1[(D1)]
-  UI --> Sources[Source registry]
+flowchart TD
+  Browser[Browser UI] --> Dashboard[TanStack Start dashboard]
+  Dashboard --> Login[Login page]
+  Dashboard --> SourceForm[Source form]
+  Dashboard --> SourcesTable[Sources table]
+  Dashboard --> CatalogSearch[Catalog search]
+  Dashboard --> EndpointPanel[MCP endpoint panel]
 
-  Client[MCP client] --> MCP["/mcp"]
-  MCP --> Auth
-  MCP --> Session[MCP_SESSION Durable Object]
-  Session --> Gateway[Gateway MCP server]
+  Login --> AuthRoutes["/api/auth/*"]
+  AuthRoutes --> BetterAuth[Better Auth OIDC + MCP plugin]
+  BetterAuth --> AuthTables[(D1 auth tables)]
 
-  Gateway --> Search[search tool]
-  Gateway --> Execute[execute tool]
+  SourceForm --> ServerFns[TanStack server functions]
+  SourcesTable --> ServerFns
+  CatalogSearch --> ServerFns
+  ServerFns --> RequireAuth[requireAuth]
+  RequireAuth --> Sources[(D1 sources)]
+  ServerFns --> Catalog[(D1 catalog_entries)]
+  ServerFns --> Logs[(D1 execution_logs)]
 
-  Search --> D1
-  Search --> Specs[Combined OpenAPI specs]
+  ServerFns --> Refresh[refreshSourceCatalog]
+  Refresh --> OpenApiSpec[Fetch OpenAPI spec]
+  Refresh --> BrokerList[MCP_BROKER listTools]
+  OpenApiSpec --> Catalog
+  BrokerList --> Catalog
 
-  Execute --> CodeMode[Code Mode sandbox]
-  CodeMode --> OpenAPI[openApiMcpServer wrappers]
-  CodeMode --> MCPWrap[codeMcpServer wrappers]
+  SourceForm --> OAuthStart["/api/sources/:slug/oauth/start"]
+  OAuthStart --> BrokerOAuth[MCP_BROKER OAuth client]
+  BrokerOAuth --> OAuthProvider[Upstream OAuth provider]
+  OAuthProvider --> OAuthCallback["/api/sources/:slug/oauth/callback"]
+  OAuthCallback --> EncryptedTokens[Encrypted source OAuth state and tokens]
+  EncryptedTokens --> Sources
 
-  OpenAPI --> APIs[User OpenAPI APIs]
-  MCPWrap --> Broker[MCP_BROKER Durable Object]
-  Broker --> UpstreamMCP[User MCP servers]
+  MCPClient[MCP client] --> McpEndpoint["/mcp"]
+  McpEndpoint --> BetterAuth
+  McpEndpoint --> McpSession[MCP_SESSION Durable Object]
+  McpSession --> Gateway[Gateway MCP server]
+  Gateway --> SearchTool[search]
+  Gateway --> ExecuteTool[execute]
+  SearchTool --> CodeModeSearch[Code Mode search helpers]
+  ExecuteTool --> CodeModeExecute[Code Mode execution helpers]
+  CodeModeSearch --> Catalog
+  CodeModeSearch --> CombinedSpec[Combined OpenAPI spec]
+  CodeModeExecute --> OpenApiRequest[OpenAPI request function]
+  CodeModeExecute --> McpTool[MCP tool function]
+  OpenApiRequest --> UserApis[User OpenAPI APIs]
+  McpTool --> BrokerCall[MCP_BROKER callTool]
+  BrokerCall --> UpstreamMCP[User MCP servers]
 ```
+
+The dashboard is the control plane: it handles sign-in, source registration, source enablement, catalog refreshes, and endpoint discovery. The `/mcp` route is the data plane: it exposes only `search` and `execute`, then fans into user-enabled source functions inside Code Mode.
+
+## UI References
+
+- Dashboard route: `/`
+- Login route: `/login`
+- Source registration: OpenAPI and MCP source form with built-in examples.
+- Source table: refresh, enable or disable, and delete registered sources.
+- Catalog search: searches the user's enabled catalog entries.
+- Endpoint panel: copies the authenticated remote MCP endpoint.
+- OAuth popup flow: MCP OAuth sources open the upstream authorization URL and refresh the catalog after callback completion.
+
+Useful external references:
+
+- [Deploy to Cloudflare buttons](https://developers.cloudflare.com/workers/tutorials/deploy-button/)
+- [Cloudflare MCP Server Portals](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/)
+- [Cloudflare MCP governance](https://developers.cloudflare.com/agents/model-context-protocol/governance/)
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
+- [Cloudflare D1](https://developers.cloudflare.com/d1/)
+- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/)
+- [Model Context Protocol TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 
 ## Local Development
 
@@ -63,6 +116,14 @@ OIDC_CLIENT_ID=dev-mcp
 OIDC_CLIENT_SECRET=replace-me
 BETTER_AUTH_SECRET=replace-with-random-secret
 ENCRYPTION_KEY=replace-with-random-secret
+```
+
+`BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` are required for deployed environments. A fixed Better Auth development secret is only used when running on localhost and neither secret is present.
+
+The local OIDC redirect URL is:
+
+```text
+http://localhost:8787/api/auth/oauth2/callback/oidc
 ```
 
 Run migrations locally:
@@ -80,6 +141,12 @@ npm run dev
 Open `http://localhost:8787`.
 
 ## Deployment
+
+You can start from the official Cloudflare one-click deploy flow:
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/corrreia/dev-mcp)
+
+The button uses Cloudflare's Workers deploy flow to clone the public Git repository, provision supported resources such as D1 and Durable Objects from `wrangler.jsonc`, and configure Workers Builds.
 
 Create the D1 database:
 
@@ -118,18 +185,31 @@ https://dev-mcp.corrreia.workers.dev/api/auth/oauth2/callback/oidc
 
 ## Source Types
 
-OpenAPI source:
+| Source type | Required fields | Supported auth |
+| --- | --- | --- |
+| OpenAPI | `baseUrl`, `specUrl` | none, bearer token, custom header |
+| MCP | `baseUrl` | none, bearer token, custom header, OAuth |
 
-- `baseUrl`: API base URL used for requests.
-- `specUrl`: OpenAPI JSON or YAML URL.
-- `auth`: none, bearer token, custom header, or OAuth placeholder.
+Source URLs must use HTTPS. Secrets for user-added sources are encrypted before being stored in D1. OpenAPI specs and upstream API responses are read with a bounded 1 MB response limit to protect the Worker from oversized upstream responses.
 
-MCP source:
+OpenAPI sources are refreshed by downloading their JSON or YAML spec and indexing each operation into the catalog. Bearer and custom-header credentials are only sent when the spec URL has the same origin as the API base URL.
 
-- `baseUrl`: remote Streamable HTTP MCP endpoint.
-- `auth`: none, bearer token, custom header, or OAuth placeholder.
+MCP OAuth sources use the MCP SDK OAuth client provider. The flow stores client information, PKCE verifier, OAuth state, and tokens encrypted in the source record. OAuth sources are cataloged after the callback completes and the upstream MCP server can list its tools.
 
-Secrets for user-added sources are encrypted before being stored in D1.
+## Gateway Tools
+
+`search` runs Code Mode with these helper functions:
+
+- `codemode.catalog(query)`: search enabled catalog entries.
+- `codemode.spec()`: return a combined OpenAPI spec for enabled OpenAPI sources.
+- `codemode.sources()`: list the user's registered source slugs, types, and names.
+
+`execute` runs Code Mode with one function per enabled catalog entry:
+
+- OpenAPI operations are exposed as `codemode.<source>_<operation>(requestOptions)`.
+- MCP tools are exposed as `codemode.<source>_<tool>(args)`.
+
+Execution code, result or error, status, and duration are logged to D1 in `execution_logs`.
 
 ## Public MCP Surface
 
@@ -139,3 +219,5 @@ The `/mcp` endpoint only exposes:
 - `execute`: run Code Mode against the user-enabled sources.
 
 Per-source tools are not directly exposed to MCP clients. They are made available inside the sandbox as typed `codemode.*` functions.
+
+The `/mcp` endpoint requires an authenticated Better Auth MCP session with a concrete user id. Each user's MCP session and upstream source broker are routed through user-scoped Durable Object names.

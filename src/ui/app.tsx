@@ -669,6 +669,22 @@ function SourceForm({
   const [saving, setSaving] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const createSource = useServerFn(createSourceConfig);
+  const authOptions = type === "mcp"
+    ? [
+        { value: "none", label: "none" },
+        { value: "bearer", label: "bearer" },
+        { value: "header", label: "header" },
+        { value: "oauth", label: "oauth" }
+      ]
+    : [
+        { value: "none", label: "none" },
+        { value: "bearer", label: "bearer" },
+        { value: "header", label: "header" }
+      ];
+
+  useEffect(() => {
+    if (type === "openapi" && authType === "oauth") setAuthType("none");
+  }, [type, authType]);
 
   function fillExample(input: SourceInput) {
     setType(input.type);
@@ -806,12 +822,7 @@ function SourceForm({
       <FormRow label="auth">
         <SegmentedToggle
           value={authType}
-          options={[
-            { value: "none", label: "none" },
-            { value: "bearer", label: "bearer" },
-            { value: "header", label: "header" },
-            { value: "oauth", label: "oauth" }
-          ]}
+          options={authOptions}
           onChange={(v) => setAuthType(v as SourceAuthType)}
         />
       </FormRow>

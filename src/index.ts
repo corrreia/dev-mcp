@@ -49,10 +49,11 @@ app.get("/api/sources/:slug/oauth/callback", async (c) => {
 app.all("/mcp", async (c) => {
   const auth = createAuth(c.env, c.req.raw);
   const handler = withMcpAuth(auth, async (request, session) => {
-    const ownerId = session.userId ?? null;
+    const ownerId = session.userId;
+    if (!ownerId) return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     const headers = new Headers(request.headers);
-    if (ownerId) headers.set("x-dev-mcp-owner-id", ownerId);
-    const sessionObject = c.env.MCP_SESSION.getByName(ownerId ?? "anonymous");
+    headers.set("x-dev-mcp-owner-id", ownerId);
+    const sessionObject = c.env.MCP_SESSION.getByName(ownerId);
     return sessionObject.fetch(new Request(request, { headers }));
   });
   return handler(c.req.raw);

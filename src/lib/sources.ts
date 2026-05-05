@@ -107,17 +107,17 @@ export async function searchCatalog(
 ): Promise<SearchResult[]> {
   const terms = query.trim().split(/\s+/).filter(Boolean).slice(0, 8);
   const ownerSources = ownerId ? await listSources(db, ownerId) : [];
-  const allowedSlugs = ownerId ? ownerSources.map((source) => source.slug) : [];
-  if (ownerId && allowedSlugs.length === 0) return [];
+  const allowedSourceIds = ownerId ? ownerSources.map((source) => source.id) : [];
+  if (ownerId && allowedSourceIds.length === 0) return [];
 
   const textPredicate =
     terms.length > 0 ? or(...terms.map((term) => like(schema.catalogEntries.searchText, `%${term}%`))) : undefined;
-  const ownerPredicate = ownerId ? inArray(schema.catalogEntries.sourceSlug, allowedSlugs) : undefined;
-  const enabledSlugs = options.enabledOnly
-    ? (ownerId ? ownerSources : await listSources(db)).filter((source) => source.enabled).map((source) => source.slug)
+  const ownerPredicate = ownerId ? inArray(schema.catalogEntries.sourceId, allowedSourceIds) : undefined;
+  const enabledSourceIds = options.enabledOnly
+    ? (ownerId ? ownerSources : await listSources(db)).filter((source) => source.enabled).map((source) => source.id)
     : [];
-  if (options.enabledOnly && enabledSlugs.length === 0) return [];
-  const enabledPredicate = options.enabledOnly ? inArray(schema.catalogEntries.sourceSlug, enabledSlugs) : undefined;
+  if (options.enabledOnly && enabledSourceIds.length === 0) return [];
+  const enabledPredicate = options.enabledOnly ? inArray(schema.catalogEntries.sourceId, enabledSourceIds) : undefined;
   const predicates = [textPredicate, ownerPredicate, enabledPredicate].filter(Boolean);
   const where = predicates.length > 0 ? and(...predicates) : undefined;
   const rows = await db
@@ -134,14 +134,13 @@ export async function listEnabledCatalogEntries(
   ownerId: string | null,
   kinds?: Array<SearchResult["kind"]>
 ): Promise<SearchResult[]> {
-  const ownerSources = ownerId ? await listSources(db, ownerId) : [];
-  const allowedSlugs = ownerId ? ownerSources.map((source) => source.slug) : [];
-  if (ownerId && allowedSlugs.length === 0) return [];
-  const where = ownerId ? inArray(schema.catalogEntries.sourceSlug, allowedSlugs) : undefined;
+  const ownerSources = ownerId ? await listSources(db, ownerId) : await listSources(db);
+  const enabledSourceIds = ownerSources.filter((source) => source.enabled).map((source) => source.id);
+  if (enabledSourceIds.length === 0) return [];
+  const where = inArray(schema.catalogEntries.sourceId, enabledSourceIds);
   const rows = await db.select().from(schema.catalogEntries).where(where);
   const entries = await Promise.all(rows.map(async (row) => catalogRowToResult(row)));
-  const enabledSlugs = new Set((ownerId ? ownerSources : await listSources(db)).filter((source) => source.enabled).map((source) => source.slug));
-  return entries.filter((entry) => enabledSlugs.has(entry.source) && (!kinds || kinds.includes(entry.kind)));
+  return entries.filter((entry) => !kinds || kinds.includes(entry.kind));
 }
 
 export async function setSourceEnabled(db: Db, slug: string, enabled: boolean, ownerId: string | null = null): Promise<SourceConfig> {
@@ -156,8 +155,7 @@ export async function catalogStats(
   ownerId: string | null
 ): Promise<{ openapiEndpoints: number; mcpTools: number; enabledSources: number }> {
   const sources = await listSources(db, ownerId);
-  const enabledSlugs = new Set(sources.filter((source) => source.enabled).map((source) => source.slug));
-  const entries = (await searchCatalog(db, "", ownerId, { limit: 10_000 })).filter((entry) => enabledSlugs.has(entry.source));
+  const entries = await searchCatalog(db, "", ownerId, { enabledOnly: true, limit: 10_000 });
   return {
     openapiEndpoints: entries.filter((entry) => entry.kind === "openapi_operation").length,
     mcpTools: entries.filter((entry) => entry.kind === "mcp_tool").length,

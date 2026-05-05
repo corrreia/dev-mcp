@@ -790,6 +790,8 @@ function SourceForm({
       <FormRow label="slug" hint="lowercase, numbers, dashes.">
         <CliInput
           name="slug"
+          type="text"
+          autoComplete="off"
           placeholder={type === "openapi" ? "petstore" : "cloudflare-docs"}
           required
           pattern="[a-z0-9][a-z0-9-]{0,62}"
@@ -799,6 +801,8 @@ function SourceForm({
       <FormRow label="name">
         <CliInput
           name="name"
+          type="text"
+          autoComplete="organization"
           placeholder={type === "openapi" ? "Modern Petstore" : "Cloudflare Docs"}
         />
       </FormRow>
@@ -806,6 +810,8 @@ function SourceForm({
       <FormRow label={type === "openapi" ? "base_url" : "mcp_url"}>
         <CliInput
           name="baseUrl"
+          type="url"
+          autoComplete="url"
           placeholder={
             type === "openapi" ? "https://api.petstoreapi.com/v1" : "https://docs.mcp.cloudflare.com/mcp"
           }
@@ -815,7 +821,13 @@ function SourceForm({
 
       {type === "openapi" ? (
         <FormRow label="spec_url">
-          <CliInput name="specUrl" placeholder="https://api.petstoreapi.com/v1/openapi.json" required />
+          <CliInput
+            name="specUrl"
+            type="url"
+            autoComplete="url"
+            placeholder="https://api.petstoreapi.com/v1/openapi.json"
+            required
+          />
         </FormRow>
       ) : null}
 
@@ -829,7 +841,7 @@ function SourceForm({
 
       {authType === "header" ? (
         <FormRow label="header">
-          <CliInput name="authHeaderName" placeholder="X-API-Key" />
+          <CliInput name="authHeaderName" type="text" autoComplete="off" placeholder="X-API-Key" />
         </FormRow>
       ) : null}
 

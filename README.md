@@ -32,7 +32,7 @@ flowchart LR
   UI --> D1[(D1)]
   UI --> Sources[Source registry]
 
-  Client[MCP client] --> MCP[/mcp]
+  Client[MCP client] --> MCP["/mcp"]
   MCP --> Auth
   MCP --> Session[MCP_SESSION Durable Object]
   Session --> Gateway[Gateway MCP server]

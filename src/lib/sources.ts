@@ -38,6 +38,9 @@ export async function getSourceBySlug(db: Db, slug: string, ownerId: string | nu
 
 export async function createSource(db: Db, env: Env, input: SourceInput): Promise<SourceConfig> {
   validateSource(input);
+  const existing = await getSourceBySlug(db, input.slug, input.ownerId ?? null);
+  if (existing) throw new Error(`source "${input.slug}" already exists`);
+
   const id = crypto.randomUUID();
   const source = {
     id,

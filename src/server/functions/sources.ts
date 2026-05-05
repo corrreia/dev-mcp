@@ -89,6 +89,13 @@ export const createSourceConfig = createServerFn({ method: "POST", strict: false
     const auth = await currentAuth();
     const env = runtimeEnv();
     const db = createDb(env.DB);
+    const existing = await getSourceBySlug(db, data.slug, auth.userId);
+    if (existing) {
+      if (!(existing.type === "mcp" && existing.authType === "oauth")) {
+        await refreshSourceCatalog(db, env, existing);
+      }
+      return existing;
+    }
     const source = await createSource(db, env, {
       ownerId: auth.userId,
       slug: data.slug,
@@ -102,7 +109,12 @@ export const createSourceConfig = createServerFn({ method: "POST", strict: false
       metadata: data.metadata
     });
     if (!(source.type === "mcp" && source.authType === "oauth")) {
-      await refreshSourceCatalog(db, env, source);
+      try {
+        await refreshSourceCatalog(db, env, source);
+      } catch (err) {
+        await deleteSource(db, source.slug, auth.userId);
+        throw err;
+      }
     }
     return source;
   });

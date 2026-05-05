@@ -29,7 +29,7 @@ Write an async arrow function and return the result.`;
 
 export const EXECUTE_DESCRIPTION = `Execute calls against user-added OpenAPI and MCP sources.
 
-First use search to find operations. Credentials never enter the sandbox; calls route through host-side bindings.
+First use search to find operations. Credentials never enter the sandbox; calls route directly through host-side OpenAPI request and MCP broker functions.
 
 Available in your code:
 
@@ -43,7 +43,6 @@ interface RequestOptions {
 }
 
 declare const codemode: {
-  request(options: RequestOptions): Promise<unknown>;
   [sourceOrTool: string]: unknown;
 };
 

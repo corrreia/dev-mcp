@@ -66,7 +66,7 @@ export function buildGatewayMcpServer(env: Env, ownerId: string | null): McpServ
     },
     async ({ code }) => {
       const started = Date.now();
-      const fns = await executionFunctions(env, ownerId, executor);
+      const fns = await executionFunctions(env, ownerId);
       const result = await executor.execute(code, [
         {
           name: "codemode",

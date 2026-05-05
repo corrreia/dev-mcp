@@ -1,21 +1,40 @@
 import { DurableObject } from "cloudflare:workers";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { createDb } from "../db/client";
 import type { Env, SearchResult, SourceConfig } from "../types";
 import { decryptSecret } from "./crypto";
+import { SourceOAuthClientProvider } from "./mcp-oauth-provider";
 
 type TextContent = { type: "text"; text: string };
 
 export class McpBroker extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => this.migrate());
   }
 
   async connectSource(source: SourceConfig): Promise<{ status: "connected" | "auth_required"; authUrl?: string }> {
-    if (source.authType === "oauth") {
-      return { status: "auth_required", authUrl: `${this.env.APP_URL}/api/sources/${source.slug}/oauth/start` };
+    try {
+      await this.withClient(source, async (client) => {
+        await client.listTools();
+      });
+      return { status: "connected" };
+    } catch (err) {
+      if (source.authType === "oauth" && err instanceof OAuthRequiredError) {
+        return { status: "auth_required", authUrl: err.authUrl };
+      }
+      throw err;
     }
+  }
+
+  async finishOAuth(source: SourceConfig, code: string, state: string | null): Promise<{ status: "connected" }> {
+    if (!source.baseUrl) throw new Error(`MCP source ${source.slug} does not have a URL`);
+    const provider = new SourceOAuthClientProvider(createDb(this.env.DB), this.env, source);
+    if (!(await provider.validateState(state))) throw new Error("Invalid OAuth state");
+    const transport = new StreamableHTTPClientTransport(new URL(source.baseUrl), {
+      authProvider: provider
+    });
+    await transport.finishAuth(code);
     await this.withClient(source, async (client) => {
       await client.listTools();
     });
@@ -28,6 +47,7 @@ export class McpBroker extends DurableObject<Env> {
       return tools.map((tool) => ({
         source: source.slug,
         type: "mcp" as const,
+        kind: "mcp_tool" as const,
         operation: tool.name,
         title: `${source.slug}.${tool.name}`,
         description: tool.description,
@@ -61,28 +81,28 @@ export class McpBroker extends DurableObject<Env> {
     });
   }
 
-  private async migrate(): Promise<void> {
-    const version = this.ctx.storage.sql.exec<{ user_version: number }>("PRAGMA user_version").one().user_version;
-    if (version < 1) {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS oauth_state (
-          source_slug TEXT PRIMARY KEY,
-          state_json TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-        PRAGMA user_version = 1;
-      `);
-    }
-  }
-
   private async withClient<T>(source: SourceConfig, fn: (client: Client) => Promise<T>): Promise<T> {
     if (!source.baseUrl) throw new Error(`MCP source ${source.slug} does not have a URL`);
-    const headers = await this.authHeaders(source);
-    const transport = new StreamableHTTPClientTransport(new URL(source.baseUrl), {
-      requestInit: { headers }
-    });
+    const oauthProvider =
+      source.authType === "oauth" ? new SourceOAuthClientProvider(createDb(this.env.DB), this.env, source) : null;
+    const transport =
+      source.authType === "oauth"
+        ? new StreamableHTTPClientTransport(new URL(source.baseUrl), {
+            authProvider: oauthProvider ?? undefined
+          })
+        : new StreamableHTTPClientTransport(new URL(source.baseUrl), {
+            requestInit: { headers: await this.authHeaders(source) }
+          });
     const client = new Client({ name: "dev-mcp-broker", version: "0.1.0" });
-    await client.connect(transport);
+    try {
+      await client.connect(transport);
+    } catch (err) {
+      if (source.authType === "oauth") {
+        const authUrl = oauthProvider?.pendingAuthorizationUrl;
+        if (authUrl) throw new OAuthRequiredError(authUrl.toString());
+      }
+      throw err;
+    }
     try {
       return await fn(client);
     } finally {
@@ -96,5 +116,11 @@ export class McpBroker extends DurableObject<Env> {
     if (source.authType === "bearer" && secret) headers.set("authorization", `Bearer ${secret}`);
     if (source.authType === "header" && source.authHeaderName && secret) headers.set(source.authHeaderName, secret);
     return headers;
+  }
+}
+
+class OAuthRequiredError extends Error {
+  constructor(readonly authUrl: string) {
+    super("OAuth authorization required");
   }
 }

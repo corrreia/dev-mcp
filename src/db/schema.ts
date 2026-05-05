@@ -157,6 +157,7 @@ export const catalogEntries = sqliteTable(
     sourceId: text("source_id").notNull().references(() => sources.id, { onDelete: "cascade" }),
     sourceSlug: text("source_slug").notNull(),
     sourceType: text("source_type", { enum: ["openapi", "mcp"] }).notNull(),
+    kind: text("kind", { enum: ["openapi_operation", "mcp_tool"] }).notNull().default("openapi_operation"),
     operationKey: text("operation_key").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -169,6 +170,7 @@ export const catalogEntries = sqliteTable(
   },
   (table) => [
     index("catalog_entries_source_id_idx").on(table.sourceId),
+    index("catalog_entries_kind_idx").on(table.kind),
     index("catalog_entries_search_text_idx").on(table.searchText)
   ]
 );

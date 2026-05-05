@@ -16,6 +16,7 @@ export interface Env {
 
 export type SourceType = "openapi" | "mcp";
 export type SourceAuthType = "none" | "bearer" | "header" | "oauth";
+export type CatalogEntryKind = "openapi_operation" | "mcp_tool";
 
 export interface SourceConfig {
   id: string;
@@ -42,8 +43,10 @@ export interface RequestOptions {
 }
 
 export interface SearchResult {
+  id?: string;
   source: string;
   type: SourceType;
+  kind: CatalogEntryKind;
   operation: string;
   title: string;
   description?: string;

@@ -1,4 +1,4 @@
-import { and, eq, like, or } from "drizzle-orm";
+import { and, eq, inArray, like, or } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
 import type { Env, SearchResult, SourceConfig, SourceType } from "../types";
@@ -83,10 +83,11 @@ export async function refreshSourceCatalog(db: Db, env: Env, source: SourceConfi
         sourceId: source.id,
         sourceSlug: entry.source,
         sourceType: entry.type,
+        kind: entry.kind,
         operationKey: entry.operation,
         title: entry.title,
         description: entry.description ?? null,
-        searchText: [entry.source, entry.type, entry.operation, entry.title, entry.description].filter(Boolean).join("\n"),
+        searchText: [entry.source, entry.type, entry.kind, entry.operation, entry.title, entry.description].filter(Boolean).join("\n"),
         inputSchemaJson: entry.inputSchema === undefined ? null : safeJson(entry.inputSchema),
         executionRefJson: safeJson(entry.executionRef)
       })
@@ -95,31 +96,70 @@ export async function refreshSourceCatalog(db: Db, env: Env, source: SourceConfi
   return entries;
 }
 
-export async function searchCatalog(db: Db, query: string, ownerId: string | null = null): Promise<SearchResult[]> {
+export async function searchCatalog(
+  db: Db,
+  query: string,
+  ownerId: string | null = null,
+  options: { enabledOnly?: boolean; limit?: number } = {}
+): Promise<SearchResult[]> {
   const terms = query.trim().split(/\s+/).filter(Boolean).slice(0, 8);
-  if (terms.length === 0) return [];
-  const predicates = terms.map((term) => like(schema.catalogEntries.searchText, `%${term}%`));
+  const ownerSources = ownerId ? await listSources(db, ownerId) : [];
+  const allowedSlugs = ownerId ? ownerSources.map((source) => source.slug) : [];
+  if (ownerId && allowedSlugs.length === 0) return [];
+
+  const textPredicate =
+    terms.length > 0 ? or(...terms.map((term) => like(schema.catalogEntries.searchText, `%${term}%`))) : undefined;
+  const ownerPredicate = ownerId ? inArray(schema.catalogEntries.sourceSlug, allowedSlugs) : undefined;
+  const enabledSlugs = options.enabledOnly
+    ? (ownerId ? ownerSources : await listSources(db)).filter((source) => source.enabled).map((source) => source.slug)
+    : [];
+  if (options.enabledOnly && enabledSlugs.length === 0) return [];
+  const enabledPredicate = options.enabledOnly ? inArray(schema.catalogEntries.sourceSlug, enabledSlugs) : undefined;
+  const predicates = [textPredicate, ownerPredicate, enabledPredicate].filter(Boolean);
+  const where = predicates.length > 0 ? and(...predicates) : undefined;
   const rows = await db
     .select()
     .from(schema.catalogEntries)
-    .where(or(...predicates))
-    .limit(30);
+    .where(where)
+    .limit(options.limit ?? 100);
 
+  return Promise.all(rows.map(async (row) => catalogRowToResult(row)));
+}
+
+export async function listEnabledCatalogEntries(
+  db: Db,
+  ownerId: string | null,
+  kinds?: Array<SearchResult["kind"]>
+): Promise<SearchResult[]> {
   const ownerSources = ownerId ? await listSources(db, ownerId) : [];
-  const allowedSlugs = new Set(ownerSources.map((source) => source.slug));
-  const filtered = ownerId ? rows.filter((row) => allowedSlugs.has(row.sourceSlug)) : rows;
+  const allowedSlugs = ownerId ? ownerSources.map((source) => source.slug) : [];
+  if (ownerId && allowedSlugs.length === 0) return [];
+  const where = ownerId ? inArray(schema.catalogEntries.sourceSlug, allowedSlugs) : undefined;
+  const rows = await db.select().from(schema.catalogEntries).where(where);
+  const entries = await Promise.all(rows.map(async (row) => catalogRowToResult(row)));
+  const enabledSlugs = new Set((ownerId ? ownerSources : await listSources(db)).filter((source) => source.enabled).map((source) => source.slug));
+  return entries.filter((entry) => enabledSlugs.has(entry.source) && (!kinds || kinds.includes(entry.kind)));
+}
 
-  return Promise.all(
-    filtered.map(async (row) => ({
-      source: row.sourceSlug,
-      type: row.sourceType,
-      operation: row.operationKey,
-      title: row.title,
-      description: row.description ?? undefined,
-      inputSchema: row.inputSchemaJson ? JSON.parse(row.inputSchemaJson) : undefined,
-      executionRef: JSON.parse(row.executionRefJson) as unknown
-    }))
-  );
+export async function setSourceEnabled(db: Db, slug: string, enabled: boolean, ownerId: string | null = null): Promise<SourceConfig> {
+  const source = await getSourceBySlug(db, slug, ownerId);
+  if (!source) throw new Error("source not found");
+  await db.update(schema.sources).set({ enabled }).where(eq(schema.sources.id, source.id)).run();
+  return { ...source, enabled };
+}
+
+export async function catalogStats(
+  db: Db,
+  ownerId: string | null
+): Promise<{ openapiEndpoints: number; mcpTools: number; enabledSources: number }> {
+  const sources = await listSources(db, ownerId);
+  const enabledSlugs = new Set(sources.filter((source) => source.enabled).map((source) => source.slug));
+  const entries = (await searchCatalog(db, "", ownerId, { limit: 10_000 })).filter((entry) => enabledSlugs.has(entry.source));
+  return {
+    openapiEndpoints: entries.filter((entry) => entry.kind === "openapi_operation").length,
+    mcpTools: entries.filter((entry) => entry.kind === "mcp_tool").length,
+    enabledSources: sources.filter((source) => source.enabled).length
+  };
 }
 
 export async function logExecution(
@@ -154,6 +194,21 @@ function rowToSource(row: typeof schema.sources.$inferSelect): SourceConfig {
     encryptedSecret: row.encryptedSecret,
     metadata: parseJsonObject(row.metadataJson),
     enabled: row.enabled
+  };
+}
+
+function catalogRowToResult(row: typeof schema.catalogEntries.$inferSelect): SearchResult {
+  const kind = row.sourceType === "mcp" && row.kind === "openapi_operation" ? "mcp_tool" : row.kind;
+  return {
+    id: row.id,
+    source: row.sourceSlug,
+    type: row.sourceType,
+    kind,
+    operation: row.operationKey,
+    title: row.title,
+    description: row.description ?? undefined,
+    inputSchema: row.inputSchemaJson ? JSON.parse(row.inputSchemaJson) : undefined,
+    executionRef: JSON.parse(row.executionRefJson) as unknown
   };
 }
 

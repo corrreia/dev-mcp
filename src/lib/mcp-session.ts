@@ -19,7 +19,7 @@ export class McpSession extends DurableObject<Env> {
       return existing.handleRequest(request);
     }
 
-    const server = buildGatewayMcpServer(this.env, ownerId);
+    const server = await buildGatewayMcpServer(this.env, ownerId);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       onsessioninitialized: (id) => {

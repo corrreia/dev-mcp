@@ -8,6 +8,7 @@ import {
   Database,
   Loader2,
   Plus,
+  Power,
   RefreshCw,
   Search,
   Server,
@@ -25,7 +26,8 @@ import {
   deleteSourceConfig,
   getDashboardData,
   refreshSourceConfig,
-  searchCombinedCatalog
+  searchCombinedCatalog,
+  setSourceEnabledConfig
 } from "@/server/functions/sources";
 import type { SearchResult, SourceAuthType, SourceConfig, SourceType } from "@/types";
 
@@ -37,6 +39,7 @@ interface SessionResponse {
 interface DashboardData {
   session: SessionResponse;
   sources: SourceConfig[];
+  stats: { openapiEndpoints: number; mcpTools: number; enabledSources: number };
 }
 
 interface SourceInput {
@@ -55,8 +58,9 @@ const RULE = "─".repeat(120);
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [session, setSession] = useState(initialData.session);
   const [sources, setSources] = useState(initialData.sources);
+  const [stats, setStats] = useState(initialData.stats);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [query, setQuery] = useState("inventory");
+  const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -67,6 +71,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const deleteSource = useServerFn(deleteSourceConfig);
   const refreshSource = useServerFn(refreshSourceConfig);
   const searchCatalog = useServerFn(searchCombinedCatalog);
+  const updateSourceEnabled = useServerFn(setSourceEnabledConfig);
 
   useEffect(() => {
     setMcpEndpoint(`${window.location.origin}/mcp`);
@@ -80,6 +85,26 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!initialData.session.authenticated) return;
+    void refreshSearch("");
+  }, []);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (!event.data || typeof event.data !== "object") return;
+      if ((event.data as { type?: unknown }).type !== "dev-mcp:oauth-complete") return;
+      toast.success("OAuth source connected.");
+      void load();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  async function refreshSearch(searchQuery = query) {
+    setSearchResults(await searchCatalog({ data: { query: searchQuery } }));
+  }
+
   async function load() {
     setError("");
     setLoading(true);
@@ -87,6 +112,8 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       const data = await loadDashboard();
       setSession(data.session);
       setSources(data.sources);
+      setStats(data.stats);
+      if (data.session.authenticated) await refreshSearch();
     } catch (err) {
       setError(formatError(err));
     } finally {
@@ -100,8 +127,12 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     const toastId = toast.loading(`refreshing ${slug}…`);
     try {
       const result = await refreshSource({ data: { slug } });
-      const message = `Indexed ${result.count} operations from ${slug}.`;
+      const message = `Indexed ${result.count} catalog items from ${slug}.`;
       setStatus(message);
+      const data = await loadDashboard();
+      setSources(data.sources);
+      setStats(data.stats);
+      await refreshSearch();
       toast.success(message, { id: toastId });
     } catch (err) {
       const message = formatError(err);
@@ -115,7 +146,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     setError("");
     setStatus("");
     try {
-      setSearchResults(await searchCatalog({ data: { query } }));
+      await refreshSearch();
     } catch (err) {
       setError(formatError(err));
     }
@@ -127,7 +158,22 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       await deleteSource({ data: { slug } });
       const data = await loadDashboard();
       setSources(data.sources);
+      setStats(data.stats);
+      await refreshSearch();
       toast.success(`Deleted ${slug}.`);
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }
+
+  async function onSourceEnabledChange(slug: string, enabled: boolean) {
+    setError("");
+    try {
+      await updateSourceEnabled({ data: { slug, enabled } });
+      const data = await loadDashboard();
+      setSources(data.sources);
+      setStats(data.stats);
+      await refreshSearch();
     } catch (err) {
       setError(formatError(err));
     }
@@ -157,9 +203,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <EndpointPanel endpoint={mcpEndpoint} />
 
         <section className="grid gap-px bg-hairline md:grid-cols-3">
-          <Metric index="01" icon={<Server className="size-4" />} label="Sources" value={counts.total} accent />
-          <Metric index="02" icon={<Database className="size-4" />} label="OpenAPI" value={counts.openapi} />
-          <Metric index="03" icon={<Cable className="size-4" />} label="MCP" value={counts.mcp} />
+          <Metric index="01" icon={<Server className="size-4" />} label="Sources" value={counts.total} sublabel={`${stats.enabledSources} enabled`} accent />
+          <Metric index="02" icon={<Database className="size-4" />} label="OpenAPI" value={counts.openapi} sublabel={`${stats.openapiEndpoints} endpoints`} />
+          <Metric index="03" icon={<Cable className="size-4" />} label="MCP" value={counts.mcp} sublabel={`${stats.mcpTools} tools`} />
         </section>
 
         {status ? <SuccessAlert message={status} /> : null}
@@ -174,6 +220,8 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             onCreated={async () => {
               const data = await loadDashboard();
               setSources(data.sources);
+              setStats(data.stats);
+              await refreshSearch();
               toast.success("source added.");
             }}
             onError={setError}
@@ -197,7 +245,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </Button>
           }
         >
-          <SourcesTable sources={sources} onRefresh={onRefresh} onDelete={onDelete} />
+          <SourcesTable sources={sources} onRefresh={onRefresh} onDelete={onDelete} onToggleEnabled={onSourceEnabledChange} />
 
           <div className="mt-8 mb-6 ascii-divider">────── // QUERY ──────</div>
 
@@ -208,15 +256,16 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="grep the combined catalog…"
+                autoComplete="off"
                 className="h-11 rounded-none border-hairline-strong bg-transparent pl-9 font-mono tracking-tight text-foreground focus-visible:border-acid focus-visible:ring-0"
               />
             </div>
             <Button
               type="submit"
-              className="rounded-none border-acid bg-acid px-5 font-mono text-[11px] uppercase tracking-[0.22em] text-primary-foreground hover:border-foreground hover:bg-foreground"
+              className="h-11 rounded-none border-acid bg-acid px-5 font-mono text-[11px] uppercase tracking-[0.22em] text-primary-foreground hover:border-foreground hover:bg-foreground"
             >
               <Search className="size-3.5" />
-              execute
+              search
             </Button>
           </form>
 
@@ -349,12 +398,14 @@ function Metric({
   icon,
   label,
   value,
+  sublabel,
   accent
 }: {
   index: string;
   icon: ReactNode;
   label: string;
   value: number;
+  sublabel?: string;
   accent?: boolean;
 }) {
   return (
@@ -371,6 +422,11 @@ function Metric({
         >
           {String(value).padStart(2, "0")}
         </div>
+        {sublabel ? (
+          <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            {sublabel}
+          </div>
+        ) : null}
       </div>
       <div className="flex size-9 items-center justify-center border border-hairline-strong text-muted-foreground transition-colors group-hover:border-acid group-hover:text-acid">
         {icon}
@@ -416,11 +472,13 @@ function Section({
 function SourcesTable({
   sources,
   onRefresh,
-  onDelete
+  onDelete,
+  onToggleEnabled
 }: {
   sources: SourceConfig[];
   onRefresh: (slug: string) => Promise<void>;
   onDelete: (slug: string) => Promise<void>;
+  onToggleEnabled: (slug: string, enabled: boolean) => Promise<void>;
 }) {
   if (sources.length === 0) {
     return (
@@ -432,18 +490,19 @@ function SourcesTable({
   }
 
   return (
-    <div className="border border-hairline">
-      <div className="grid grid-cols-[2.4rem_1fr_5rem_5rem_auto] items-center border-b border-hairline bg-background/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+    <div className="overflow-x-auto border border-hairline">
+      <div className="grid min-w-[52rem] grid-cols-[2.4rem_minmax(0,1fr)_5rem_5rem_7rem_5rem] items-center gap-3 border-b border-hairline bg-background/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
         <span>#</span>
         <span>source</span>
         <span>type</span>
         <span>auth</span>
-        <span className="text-right">ops</span>
+        <span>status</span>
+        <span className="text-right">actions</span>
       </div>
       {sources.map((source, idx) => (
         <div
           key={source.id}
-          className="group grid grid-cols-[2.4rem_1fr_5rem_5rem_auto] items-center gap-2 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-card/60"
+          className="group grid min-w-[52rem] grid-cols-[2.4rem_minmax(0,1fr)_5rem_5rem_7rem_5rem] items-center gap-3 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-card/60"
         >
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {String(idx + 1).padStart(2, "0")}
@@ -470,6 +529,10 @@ function SourcesTable({
           <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             {source.authType}
           </span>
+          <SourceSwitch
+            enabled={source.enabled}
+            onChange={(enabled) => onToggleEnabled(source.slug, enabled)}
+          />
           <div className="flex items-center justify-end gap-1.5">
             <IconAction
               label="refresh"
@@ -518,6 +581,31 @@ function IconAction({
   );
 }
 
+function SourceSwitch({
+  enabled,
+  onChange
+}: {
+  enabled: boolean;
+  onChange: (enabled: boolean) => Promise<void>;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      onClick={() => void onChange(!enabled)}
+      className={`inline-flex h-8 w-[6.5rem] items-center justify-between border px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors ${
+        enabled
+          ? "border-acid bg-acid/10 text-acid hover:bg-acid hover:text-primary-foreground"
+          : "border-hairline bg-transparent text-muted-foreground hover:border-foreground hover:text-foreground"
+      }`}
+    >
+      <Power className="size-3" />
+      {enabled ? "on" : "off"}
+    </button>
+  );
+}
+
 function SearchResultsTable({ results }: { results: SearchResult[] }) {
   if (results.length === 0) {
     return (
@@ -529,16 +617,17 @@ function SearchResultsTable({ results }: { results: SearchResult[] }) {
   }
 
   return (
-    <div className="border border-hairline">
-      <div className="grid grid-cols-[2.4rem_1fr_auto] items-center border-b border-hairline bg-background/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+    <div className="overflow-x-auto border border-hairline">
+      <div className="grid min-w-[48rem] grid-cols-[2.4rem_minmax(0,1fr)_7rem_minmax(14rem,22rem)] items-center gap-3 border-b border-hairline bg-background/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
         <span>#</span>
-        <span>operation</span>
+        <span>item</span>
+        <span>kind</span>
         <span className="text-right">reference</span>
       </div>
       {results.map((result, index) => (
         <div
           key={`${result.source}-${result.operation}-${index}`}
-          className="group grid grid-cols-[2.4rem_1fr_auto] items-center gap-3 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-card/60"
+          className="group grid min-w-[48rem] grid-cols-[2.4rem_minmax(0,1fr)_7rem_minmax(14rem,22rem)] items-center gap-3 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-card/60"
         >
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {String(index + 1).padStart(2, "0")}
@@ -549,13 +638,21 @@ function SearchResultsTable({ results }: { results: SearchResult[] }) {
               <p className="truncate font-mono text-[11px] text-muted-foreground/80">{result.description}</p>
             ) : null}
           </div>
-          <span className="border border-hairline-strong bg-background/40 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-acid">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            {kindLabel(result.kind)}
+          </span>
+          <span className="min-w-0 truncate justify-self-end border border-hairline-strong bg-background/40 px-2 py-1 text-right font-mono text-[10px] uppercase tracking-[0.18em] text-acid">
             {result.source}.{result.operation}
           </span>
         </div>
       ))}
     </div>
   );
+}
+
+function kindLabel(kind: SearchResult["kind"]): string {
+  if (kind === "openapi_operation") return "endpoint";
+  return "tool";
 }
 
 /* ────────────────────────────────────────────────────────────── */
@@ -592,7 +689,8 @@ function SourceForm({
     event.preventDefault();
     onError("");
     setSaving(true);
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const input: SourceInput = {
       slug: String(form.get("slug") ?? ""),
       name: String(form.get("name") ?? "") || undefined,
@@ -609,7 +707,12 @@ function SourceForm({
 
     try {
       await createSource({ data: input });
-      event.currentTarget.reset();
+      if (input.type === "mcp" && input.authType === "oauth") {
+        await onCreated();
+        await startSourceOAuth(input.slug);
+        return;
+      }
+      formElement.reset();
       setAuthType("none");
       await onCreated();
     } catch (err) {
@@ -988,6 +1091,20 @@ async function login(): Promise<void> {
 async function logout(): Promise<void> {
   await fetch("/api/auth/sign-out", { method: "POST" });
   window.location.href = "/login";
+}
+
+async function startSourceOAuth(slug: string): Promise<void> {
+  const response = await requestJson<{ status: "connected" | "auth_required"; authUrl?: string }>(
+    `/api/sources/${encodeURIComponent(slug)}/oauth/start`,
+    { method: "POST" }
+  );
+  if (response.status === "connected") {
+    toast.success("OAuth source connected.");
+    return;
+  }
+  if (!response.authUrl) throw new Error("OAuth source did not return an authorization URL");
+  const popup = window.open(response.authUrl, "dev-mcp-oauth", "width=640,height=760");
+  if (!popup) window.location.href = response.authUrl;
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {

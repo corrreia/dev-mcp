@@ -7,7 +7,8 @@ const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "optio
 export async function fetchOpenApiSpec(source: SourceConfig, encryptionKey?: string): Promise<Record<string, unknown>> {
   const specUrl = source.specUrl ?? source.baseUrl;
   if (!specUrl) throw new Error(`Source ${source.slug} does not have a spec URL`);
-  const response = await fetch(specUrl, { headers: await authHeaders(source, encryptionKey) });
+  const headers = shouldSendSpecAuth(source, specUrl) ? await authHeaders(source, encryptionKey) : undefined;
+  const response = await fetch(specUrl, { headers });
   if (!response.ok) throw new Error(`Failed to fetch ${specUrl}: ${response.status} ${response.statusText}`);
   const text = await response.text();
   try {
@@ -15,6 +16,12 @@ export async function fetchOpenApiSpec(source: SourceConfig, encryptionKey?: str
   } catch {
     return load(text) as Record<string, unknown>;
   }
+}
+
+function shouldSendSpecAuth(source: SourceConfig, specUrl: string): boolean {
+  if (source.authType === "none" || source.authType === "oauth") return false;
+  if (!source.baseUrl) return false;
+  return new URL(source.baseUrl).origin === new URL(specUrl).origin;
 }
 
 export function catalogOpenApi(source: SourceConfig, spec: Record<string, unknown>): SearchResult[] {
@@ -32,6 +39,7 @@ export function catalogOpenApi(source: SourceConfig, spec: Record<string, unknow
       results.push({
         source: source.slug,
         type: "openapi",
+        kind: "openapi_operation",
         operation: operationKey,
         title,
         description,

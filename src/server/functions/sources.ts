@@ -5,7 +5,16 @@ import { z } from "zod";
 import { createDb } from "@/db/client";
 import { requireAuth } from "@/lib/auth";
 import { createAuth } from "@/lib/better-auth";
-import { createSource, deleteSource, getSourceBySlug, listSources, refreshSourceCatalog, searchCatalog } from "@/lib/sources";
+import {
+  catalogStats,
+  createSource,
+  deleteSource,
+  getSourceBySlug,
+  listSources,
+  refreshSourceCatalog,
+  searchCatalog,
+  setSourceEnabled
+} from "@/lib/sources";
 import type { Env } from "@/types";
 
 const sourceInputSchema = z.object({
@@ -22,6 +31,7 @@ const sourceInputSchema = z.object({
 
 const slugInputSchema = z.object({ slug: z.string() });
 const searchInputSchema = z.object({ query: z.string() });
+const sourceEnabledInputSchema = z.object({ slug: z.string(), enabled: z.boolean() });
 
 function runtimeEnv() {
   return cloudflareEnv as unknown as Env;
@@ -57,16 +67,19 @@ export const getDashboardData = createServerFn({ method: "GET", strict: false })
   if (!session.authenticated) {
     return {
       session,
-      sources: []
+      sources: [],
+      stats: { openapiEndpoints: 0, mcpTools: 0, enabledSources: 0 }
     };
   }
 
   const auth = await currentAuth();
-  const sources = await listSources(createDb(runtimeEnv().DB), auth.userId);
+  const db = createDb(runtimeEnv().DB);
+  const sources = await listSources(db, auth.userId);
 
   return {
     session,
-    sources
+    sources,
+    stats: await catalogStats(db, auth.userId)
   };
 });
 
@@ -74,7 +87,9 @@ export const createSourceConfig = createServerFn({ method: "POST", strict: false
   .inputValidator(sourceInputSchema)
   .handler(async ({ data }) => {
     const auth = await currentAuth();
-    return createSource(createDb(runtimeEnv().DB), runtimeEnv(), {
+    const env = runtimeEnv();
+    const db = createDb(env.DB);
+    const source = await createSource(db, env, {
       ownerId: auth.userId,
       slug: data.slug,
       type: data.type,
@@ -86,6 +101,10 @@ export const createSourceConfig = createServerFn({ method: "POST", strict: false
       secret: data.secret,
       metadata: data.metadata
     });
+    if (!(source.type === "mcp" && source.authType === "oauth")) {
+      await refreshSourceCatalog(db, env, source);
+    }
+    return source;
   });
 
 export const deleteSourceConfig = createServerFn({ method: "POST" })
@@ -116,4 +135,11 @@ export const searchCombinedCatalog = createServerFn({ method: "GET", strict: fal
   .handler(async ({ data }) => {
     const auth = await currentAuth();
     return searchCatalog(createDb(runtimeEnv().DB), data.query, auth.userId);
+  });
+
+export const setSourceEnabledConfig = createServerFn({ method: "POST", strict: false })
+  .inputValidator(sourceEnabledInputSchema)
+  .handler(async ({ data }) => {
+    const auth = await currentAuth();
+    return setSourceEnabled(createDb(runtimeEnv().DB), data.slug, data.enabled, auth.userId);
   });

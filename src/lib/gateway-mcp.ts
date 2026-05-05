@@ -9,7 +9,7 @@ import { EXECUTE_DESCRIPTION, SEARCH_DESCRIPTION } from "./gateway/descriptions"
 import { executionFunctions } from "./gateway/functions";
 import { combinedSpec } from "./gateway/spec";
 
-export function buildGatewayMcpServer(env: Env, ownerId: string | null): McpServer {
+export async function buildGatewayMcpServer(env: Env, ownerId: string | null): Promise<McpServer> {
   const db = createDb(env.DB);
   const executor = new DynamicWorkerExecutor({
     loader: env.LOADER,
@@ -35,7 +35,8 @@ export function buildGatewayMcpServer(env: Env, ownerId: string | null): McpServ
         {
           name: "codemode",
           fns: {
-            catalog: async (args: unknown) => searchCatalog(db, typeof args === "string" ? args : String(args), ownerId),
+            catalog: async (args: unknown) =>
+              searchCatalog(db, typeof args === "string" ? args : String(args), ownerId, { enabledOnly: true }),
             spec: async () => combinedSpec(env, ownerId),
             sources: async () =>
               (await listSources(db, ownerId)).map((source) => ({

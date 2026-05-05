@@ -7,7 +7,7 @@ import { McpSession } from "./lib/mcp-session";
 import { requireAuth } from "./lib/auth";
 import { createAuth } from "./lib/better-auth";
 import { jsonResponse } from "./lib/json";
-import { getSourceBySlug } from "./lib/sources";
+import { getSourceBySlug, refreshSourceCatalog } from "./lib/sources";
 import type { Env } from "./types";
 
 export { McpBroker, McpSession };
@@ -28,6 +28,22 @@ app.post("/api/sources/:slug/oauth/start", async (c) => {
   if (!source) return jsonResponse({ error: "source not found" }, { status: 404 });
   const broker = c.env.MCP_BROKER.getByName(auth.userId ?? "default");
   return jsonResponse(await broker.connectSource(source));
+});
+
+app.get("/api/sources/:slug/oauth/callback", async (c) => {
+  const auth = await requireAuth(c.req.raw, c.env);
+  const db = createDb(c.env.DB);
+  const source = await getSourceBySlug(db, c.req.param("slug"), auth.userId);
+  if (!source) return jsonResponse({ error: "source not found" }, { status: 404 });
+  const code = c.req.query("code");
+  if (!code) return jsonResponse({ error: "missing OAuth code" }, { status: 400 });
+  const broker = c.env.MCP_BROKER.getByName(auth.userId ?? "default");
+  await broker.finishOAuth(source, code, c.req.query("state") ?? null);
+  await refreshSourceCatalog(db, c.env, source);
+  return new Response(
+    `<!doctype html><html><body><script>if(window.opener){window.opener.postMessage({type:"dev-mcp:oauth-complete",slug:${JSON.stringify(source.slug)}},"*");window.close();}else{location.href="/";}</script><p>OAuth complete. You can close this window.</p></body></html>`,
+    { headers: { "content-type": "text/html; charset=utf-8" } }
+  );
 });
 
 app.all("/mcp", async (c) => {

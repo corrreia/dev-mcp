@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3cc04d81-b8b9-41c4-b53b-2a330620247f",
+  "id": "8e1425ae-dff7-498a-9d3b-1a9de4371cdc",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -160,6 +160,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'openapi_operation'"
+        },
         "operation_key": {
           "name": "operation_key",
           "type": "text",
@@ -216,6 +224,13 @@
           "name": "catalog_entries_source_id_idx",
           "columns": [
             "source_id"
+          ],
+          "isUnique": false
+        },
+        "catalog_entries_kind_idx": {
+          "name": "catalog_entries_kind_idx",
+          "columns": [
+            "kind"
           ],
           "isUnique": false
         },
@@ -699,6 +714,28 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {

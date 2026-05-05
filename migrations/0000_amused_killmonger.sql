@@ -21,6 +21,7 @@ CREATE TABLE `catalog_entries` (
 	`source_id` text NOT NULL,
 	`source_slug` text NOT NULL,
 	`source_type` text NOT NULL,
+	`kind` text DEFAULT 'openapi_operation' NOT NULL,
 	`operation_key` text NOT NULL,
 	`title` text NOT NULL,
 	`description` text,
@@ -32,6 +33,7 @@ CREATE TABLE `catalog_entries` (
 );
 --> statement-breakpoint
 CREATE INDEX `catalog_entries_source_id_idx` ON `catalog_entries` (`source_id`);--> statement-breakpoint
+CREATE INDEX `catalog_entries_kind_idx` ON `catalog_entries` (`kind`);--> statement-breakpoint
 CREATE INDEX `catalog_entries_search_text_idx` ON `catalog_entries` (`search_text`);--> statement-breakpoint
 CREATE TABLE `execution_logs` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -99,6 +101,9 @@ CREATE TABLE `session` (
 	`user_id` text NOT NULL,
 	`expires_at` integer NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`ip_address` text,
+	`user_agent` text,
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint

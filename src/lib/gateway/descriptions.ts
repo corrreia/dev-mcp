@@ -46,7 +46,23 @@ declare const codemode: {
   [sourceOrTool: string]: unknown;
 };
 
-Each OpenAPI source is exposed as codemode.<source>(requestOptions).
+Each OpenAPI operation is exposed as codemode.<source>_<operation>(requestOptions).
 Each MCP tool is exposed as codemode.<source>_<tool>(args).
-Use search first to find source slugs, OpenAPI paths, and MCP tool names.
+
+Names are sanitized for JavaScript identifiers: dashes and other punctuation become underscores.
+For example, source "workos-api" with operation "AuthorizationResourcesController_list" is called as:
+
+async () => {
+  return codemode.workos_api_AuthorizationResourcesController_list({
+    query: { limit: 100, order: "asc" }
+  });
+}
+
+OpenAPI requestOptions may include:
+- query: URL query parameters.
+- body: JSON request body for POST/PUT/PATCH requests.
+- contentType/rawBody: only for non-JSON or multipart requests.
+
+Do not pass method or path for cataloged OpenAPI operations; the generated function already knows them.
+Use search first to find source slugs, operation names, OpenAPI paths, and MCP tool names.
 Write an async arrow function and return the result.`;

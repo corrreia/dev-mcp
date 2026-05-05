@@ -81,7 +81,7 @@ export async function requestOpenApi(
   encryptionKey?: string
 ): Promise<unknown> {
   if (!source.baseUrl) throw new Error(`Source ${source.slug} does not have a base URL`);
-  const path = stripSourcePrefix(options.path, source.slug);
+  const path = interpolatePath(stripSourcePrefix(options.path, source.slug), options.params);
   const base = new URL(source.baseUrl);
   const basePath = base.pathname.replace(/\/+$/, "");
   const requestPath = path.replace(/^\/+/, "");
@@ -125,6 +125,14 @@ function stripSourcePrefix(path: string, slug: string): string {
   if (normalized === `/${slug}`) return "/";
   if (normalized.startsWith(prefix)) return normalized.slice(slug.length + 1);
   return normalized;
+}
+
+function interpolatePath(path: string, params: RequestOptions["params"] = {}): string {
+  return path.replace(/\{([^}/]+)\}/g, (match, name: string) => {
+    const value = params[name];
+    if (value === undefined) throw new Error(`Missing path parameter "${name}" for ${path}`);
+    return encodeURIComponent(String(value));
+  });
 }
 
 function inputSchemaForOperation(operation: Record<string, unknown>): unknown {

@@ -36,6 +36,7 @@ export interface SourceConfig {
 export interface RequestOptions {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
+  params?: Record<string, string | number | boolean | undefined>;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
   contentType?: string;

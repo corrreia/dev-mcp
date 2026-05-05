@@ -34,8 +34,7 @@ First use search to find operations. Credentials never enter the sandbox; calls 
 Available in your code:
 
 interface RequestOptions {
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  path: string;
+  params?: Record<string, string | number | boolean | undefined>;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
   contentType?: string;
@@ -53,12 +52,22 @@ Names are sanitized for JavaScript identifiers: dashes and other punctuation bec
 For example, source "workos-api" with operation "AuthorizationResourcesController_list" is called as:
 
 async () => {
+  return codemode.workos_api_AuthorizationPermissionsController_update({
+    params: { slug: "agents:manage" },
+    body: { description: "Manage agents" }
+  });
+}
+
+For a list endpoint:
+
+async () => {
   return codemode.workos_api_AuthorizationResourcesController_list({
     query: { limit: 100, order: "asc" }
   });
 }
 
 OpenAPI requestOptions may include:
+- params: path parameters for placeholders like {slug}, {id}, or {organization_id}.
 - query: URL query parameters.
 - body: JSON request body for POST/PUT/PATCH requests.
 - contentType/rawBody: only for non-JSON or multipart requests.

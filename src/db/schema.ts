@@ -179,23 +179,6 @@ export const catalogEntries = sqliteTable(
   ]
 );
 
-export const executionLogs = sqliteTable(
-  "execution_logs",
-  {
-    id: text("id").primaryKey(),
-    ownerId: text("owner_id"),
-    status: text("status", { enum: ["ok", "error"] }).notNull(),
-    code: text("code").notNull(),
-    resultJson: text("result_json"),
-    error: text("error"),
-    durationMs: integer("duration_ms").notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull()
-  },
-  (table) => [index("execution_logs_owner_id_idx").on(table.ownerId)]
-);
-
 export const sourceRelations = relations(sources, ({ many }) => ({
   catalogEntries: many(catalogEntries)
 }));

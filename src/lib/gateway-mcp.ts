@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createDb } from "../db/client";
 import type { Env } from "../types";
 import { truncateResult } from "./json";
-import { listSources, logExecution, searchCatalog } from "./sources";
+import { listSources, searchCatalog } from "./sources";
 import { EXECUTE_DESCRIPTION, SEARCH_DESCRIPTION } from "./gateway/descriptions";
 import { executionFunctions } from "./gateway/functions";
 import { combinedSpec } from "./gateway/spec";
@@ -66,7 +66,6 @@ export async function buildGatewayMcpServer(env: Env, ownerId: string | null): P
       }
     },
     async ({ code }) => {
-      const started = Date.now();
       const fns = await executionFunctions(env, ownerId);
       const result = await executor.execute(code, [
         {
@@ -74,15 +73,6 @@ export async function buildGatewayMcpServer(env: Env, ownerId: string | null): P
           fns
         }
       ]);
-
-      await logExecution(db, {
-        ownerId,
-        code,
-        status: result.error ? "error" : "ok",
-        result: result.error ? undefined : result.result,
-        error: result.error,
-        durationMs: Date.now() - started
-      });
 
       if (result.error) {
         return { content: [{ type: "text" as const, text: `Error: ${result.error}` }], isError: true };

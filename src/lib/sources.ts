@@ -163,24 +163,6 @@ export async function catalogStats(
   };
 }
 
-export async function logExecution(
-  db: Db,
-  input: { ownerId: string | null; code: string; status: "ok" | "error"; result?: unknown; error?: string; durationMs: number }
-): Promise<void> {
-  await db
-    .insert(schema.executionLogs)
-    .values({
-      id: crypto.randomUUID(),
-      ownerId: input.ownerId,
-      code: input.code,
-      status: input.status,
-      resultJson: input.result === undefined ? null : safeJson(input.result),
-      error: input.error ?? null,
-      durationMs: input.durationMs
-    })
-    .run();
-}
-
 function rowToSource(row: typeof schema.sources.$inferSelect): SourceConfig {
   return {
     id: row.id,

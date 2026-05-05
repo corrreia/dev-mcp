@@ -53,13 +53,12 @@ The dashboard is the control plane: it handles sign-in, source registration, sou
 Create `.dev.vars`:
 
 ```ini
-APP_URL=http://localhost:8787
-OIDC_ISSUER=https://auth.example.com
-OIDC_CLIENT_ID=dev-mcp
 OIDC_CLIENT_SECRET=replace-me
 BETTER_AUTH_SECRET=replace-with-random-secret
 ENCRYPTION_KEY=replace-with-random-secret
 ```
+
+`APP_URL`, `OIDC_ISSUER`, and `OIDC_CLIENT_ID` are non-secret Wrangler vars configured in `wrangler.jsonc`. Add them to `.dev.vars` only if you need local overrides.
 
 `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` are required for deployed environments. A fixed Better Auth development secret is only used when running on localhost and neither secret is present.
 

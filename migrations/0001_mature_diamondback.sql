@@ -1,0 +1,1 @@
+ALTER TABLE `oauth_application` ADD `metadata` text;

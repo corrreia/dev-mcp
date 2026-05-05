@@ -80,9 +80,13 @@ export const oauthApplication = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name"),
+    icon: text("icon"),
     clientId: text("client_id").notNull().unique(),
     clientSecret: text("client_secret"),
     redirectUrls: text("redirect_urls"),
+    metadata: text("metadata"),
+    type: text("type"),
+    authenticationScheme: text("authentication_scheme"),
     disabled: integer("disabled", { mode: "boolean" }).default(false),
     userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }),

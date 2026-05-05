@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth, mcp } from "better-auth/plugins";
 import { createDb } from "../db/client";
+import * as schema from "../db/schema";
 import type { Env } from "../types";
 
 export type AppAuth = ReturnType<typeof createAuth>;
@@ -28,7 +29,7 @@ export function createAuth(env: Env, request: Request) {
   ];
 
   return betterAuth({
-    database: drizzleAdapter(createDb(env.DB), { provider: "sqlite" }),
+    database: drizzleAdapter(createDb(env.DB), { provider: "sqlite", schema }),
     baseURL: origin,
     secret: authSecret(env, requestOrigin),
     emailAndPassword: { enabled: false },

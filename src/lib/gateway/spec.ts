@@ -1,7 +1,7 @@
-import { createDb } from "../../db/client";
-import type { Env, SourceConfig } from "../../types";
-import { fetchOpenApiSpec, mergeOpenApiSpecs } from "../openapi";
-import { listSources } from "../sources";
+import { createDb } from "@/db/client";
+import type { Env, SourceConfig } from "@/types";
+import { fetchOpenApiSpec, mergeOpenApiSpecs } from "@/lib/openapi";
+import { listSources } from "@/lib/sources";
 
 export async function combinedSpec(env: Env, ownerId: string | null): Promise<Record<string, unknown>> {
   const db = createDb(env.DB);

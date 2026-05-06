@@ -1,5 +1,5 @@
-import type { Env } from "../types";
-import { getUserId } from "./better-auth";
+import type { Env } from "@/types";
+import { getUserId } from "@/lib/better-auth";
 
 export interface AuthContext {
   userId: string | null;

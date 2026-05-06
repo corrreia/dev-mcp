@@ -1,9 +1,9 @@
 import { sanitizeToolName } from "@cloudflare/codemode";
-import { createDb } from "../../db/client";
-import type { Env, RequestOptions, SearchResult } from "../../types";
-import type { McpBroker } from "../mcp-broker";
-import { requestOpenApi } from "../openapi";
-import { getSourceBySlug, listEnabledCatalogEntries } from "../sources";
+import { createDb } from "@/db/client";
+import type { Env, RequestOptions, SearchResult } from "@/types";
+import type { McpBroker } from "@/lib/mcp-broker";
+import { requestOpenApi } from "@/lib/openapi";
+import { getSourceBySlug, listEnabledCatalogEntries } from "@/lib/sources";
 
 export async function executionFunctions(env: Env, ownerId: string | null): Promise<Record<string, (args: unknown) => Promise<unknown>>> {
   const db = createDb(env.DB);

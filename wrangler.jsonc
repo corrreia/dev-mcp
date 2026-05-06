@@ -17,6 +17,9 @@
     "OIDC_ISSUER": "https://auth.tomascorreia.net",
     "OIDC_CLIENT_ID": "64dc12a6-912a-4bf8-b572-f93198d1a981"
   },
+  "secrets": {
+    "required": ["OIDC_CLIENT_SECRET", "BETTER_AUTH_SECRET", "ENCRYPTION_KEY"]
+  },
   "worker_loaders": [
     {
       "binding": "LOADER"

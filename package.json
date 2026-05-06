@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --host 0.0.0.0 --port 8787",
-    "build": "vite build",
+    "build": "npm run cf-typegen && vite build",
     "preview": "npm run build && wrangler dev --config dist/server/wrangler.json",
     "deploy": "npm run build && wrangler deploy --config dist/server/wrangler.json",
-    "cf:typegen": "wrangler types",
-    "check-types": "tsc --noEmit",
+    "cf-typegen": "wrangler types worker-configuration.d.ts",
+    "check-types": "npm run cf-typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply dev-mcp --local",
     "db:migrate:remote": "wrangler d1 migrations apply dev-mcp --remote"

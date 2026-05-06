@@ -1,18 +1,4 @@
-import type { McpBroker as McpBrokerClass } from "./lib/mcp-broker";
-import type { McpSession as McpSessionClass } from "./lib/mcp-session";
-
-export interface Env {
-  DB: D1Database;
-  LOADER: WorkerLoader;
-  MCP_BROKER: DurableObjectNamespace<McpBrokerClass>;
-  MCP_SESSION: DurableObjectNamespace<McpSessionClass>;
-  APP_URL: string;
-  OIDC_ISSUER: string;
-  OIDC_CLIENT_ID: string;
-  OIDC_CLIENT_SECRET?: string;
-  BETTER_AUTH_SECRET?: string;
-  ENCRYPTION_KEY?: string;
-}
+export type Env = Cloudflare.Env;
 
 export type SourceType = "openapi" | "mcp";
 export type SourceAuthType = "none" | "bearer" | "header" | "oauth";

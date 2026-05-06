@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import startHandler from "@tanstack/react-start/server-entry";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata, withMcpAuth } from "better-auth/plugins";
-import { createDb } from "./db/client";
-import { McpBroker } from "./lib/mcp-broker";
-import { McpSession } from "./lib/mcp-session";
-import { requireAuth } from "./lib/auth";
-import { createAuth } from "./lib/better-auth";
-import { jsonResponse } from "./lib/json";
-import { getSourceBySlug, refreshSourceCatalog } from "./lib/sources";
-import type { Env } from "./types";
+import { createDb } from "@/db/client";
+import { McpBroker } from "@/lib/mcp-broker";
+import { McpSession } from "@/lib/mcp-session";
+import { requireAuth } from "@/lib/auth";
+import { createAuth } from "@/lib/better-auth";
+import { jsonResponse } from "@/lib/json";
+import { getSourceBySlug, refreshSourceCatalog } from "@/lib/sources";
+import type { Env } from "@/types";
 
 export { McpBroker, McpSession };
 

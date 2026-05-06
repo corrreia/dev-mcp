@@ -6,9 +6,9 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import * as schema from "../db/schema";
-import type { Env, SourceConfig } from "../types";
-import { decryptSecret, encryptSecret } from "./crypto";
+import * as schema from "@/db/schema";
+import type { Env, SourceConfig } from "@/types";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 
 type Db = DrizzleD1Database<typeof schema>;
 

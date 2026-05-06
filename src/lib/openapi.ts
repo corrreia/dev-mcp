@@ -1,6 +1,6 @@
 import { load } from "js-yaml";
-import type { RequestOptions, SearchResult, SourceConfig } from "../types";
-import { decryptSecret } from "./crypto";
+import type { RequestOptions, SearchResult, SourceConfig } from "@/types";
+import { decryptSecret } from "@/lib/crypto";
 
 const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 const MAX_OPENAPI_SPEC_BYTES = 16_000_000;

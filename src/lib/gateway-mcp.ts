@@ -1,13 +1,13 @@
 import { DynamicWorkerExecutor } from "@cloudflare/codemode";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createDb } from "../db/client";
-import type { Env } from "../types";
-import { truncateResult } from "./json";
-import { listSources, searchCatalog } from "./sources";
-import { EXECUTE_DESCRIPTION, SEARCH_DESCRIPTION } from "./gateway/descriptions";
-import { executionFunctions } from "./gateway/functions";
-import { combinedSpec } from "./gateway/spec";
+import { createDb } from "@/db/client";
+import type { Env } from "@/types";
+import { truncateResult } from "@/lib/json";
+import { listSources, searchCatalog } from "@/lib/sources";
+import { EXECUTE_DESCRIPTION, SEARCH_DESCRIPTION } from "@/lib/gateway/descriptions";
+import { executionFunctions } from "@/lib/gateway/functions";
+import { combinedSpec } from "@/lib/gateway/spec";
 
 export async function buildGatewayMcpServer(env: Env, ownerId: string | null): Promise<McpServer> {
   const db = createDb(env.DB);

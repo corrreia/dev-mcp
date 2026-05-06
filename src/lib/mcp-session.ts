@@ -1,8 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import type { Env } from "../types";
-import { jsonResponse } from "./json";
-import { buildGatewayMcpServer } from "./gateway-mcp";
+import type { Env } from "@/types";
+import { jsonResponse } from "@/lib/json";
+import { buildGatewayMcpServer } from "@/lib/gateway-mcp";
 
 export class McpSession extends DurableObject<Env> {
   private readonly transports = new Map<string, WebStandardStreamableHTTPServerTransport>();

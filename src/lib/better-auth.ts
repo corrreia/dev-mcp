@@ -1,9 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth, mcp } from "better-auth/plugins";
-import { createDb } from "../db/client";
-import * as schema from "../db/schema";
-import type { Env } from "../types";
+import { createDb } from "@/db/client";
+import * as schema from "@/db/schema";
+import type { Env } from "@/types";
 
 export type AppAuth = ReturnType<typeof createAuth>;
 

@@ -1,10 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { createDb } from "../db/client";
-import type { Env, SearchResult, SourceConfig } from "../types";
-import { decryptSecret } from "./crypto";
-import { SourceOAuthClientProvider } from "./mcp-oauth-provider";
+import { createDb } from "@/db/client";
+import type { Env, SearchResult, SourceConfig } from "@/types";
+import { decryptSecret } from "@/lib/crypto";
+import { SourceOAuthClientProvider } from "@/lib/mcp-oauth-provider";
 
 type TextContent = { type: "text"; text: string };
 

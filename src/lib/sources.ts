@@ -1,10 +1,10 @@
 import { and, eq, inArray, like, or } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import * as schema from "../db/schema";
-import type { Env, SearchResult, SourceConfig, SourceType } from "../types";
-import { encryptSecret } from "./crypto";
-import { parseJsonObject, safeJson } from "./json";
-import { catalogOpenApi, fetchOpenApiSpec } from "./openapi";
+import * as schema from "@/db/schema";
+import type { Env, SearchResult, SourceConfig, SourceType } from "@/types";
+import { encryptSecret } from "@/lib/crypto";
+import { parseJsonObject, safeJson } from "@/lib/json";
+import { catalogOpenApi, fetchOpenApiSpec } from "@/lib/openapi";
 
 type Db = DrizzleD1Database<typeof schema>;
 

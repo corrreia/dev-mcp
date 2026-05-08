@@ -2,7 +2,7 @@ import { load } from "js-yaml";
 import type { RequestOptions, SearchResult, SourceConfig } from "@/types";
 import { decryptSecret } from "@/lib/crypto";
 
-const METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
+const METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 const MAX_OPENAPI_SPEC_BYTES = 16_000_000;
 const MAX_UPSTREAM_RESPONSE_BYTES = 1_000_000;
 
@@ -59,11 +59,11 @@ export function mergeOpenApiSpecs(entries: Array<{ source: SourceConfig; spec: R
   for (const entry of entries) {
     const sourcePaths = (entry.spec.paths ?? {}) as Record<string, unknown>;
     for (const [path, methods] of Object.entries(sourcePaths)) {
-      paths[`/${entry.source.slug}${path}`] = methods;
+      paths[`/${entry.source.slug}${path}`] = rewriteInternalSchemaRefs(methods, entry.source.slug);
     }
     const schemas = ((entry.spec.components as Record<string, unknown> | undefined)?.schemas ?? {}) as Record<string, unknown>;
     for (const [name, schema] of Object.entries(schemas)) {
-      components.schemas[`${entry.source.slug}_${name}`] = schema;
+      components.schemas[`${entry.source.slug}_${name}`] = rewriteInternalSchemaRefs(schema, entry.source.slug);
     }
   }
   return {
@@ -92,6 +92,9 @@ export async function requestOpenApi(
   }
 
   const headers = await authHeaders(source, encryptionKey);
+  for (const [key, value] of Object.entries(options.headers ?? {})) {
+    if (value !== undefined) headers.set(key, String(value));
+  }
   let body: BodyInit | undefined;
   if (options.body !== undefined) {
     headers.set("content-type", options.contentType ?? "application/json");
@@ -101,14 +104,21 @@ export async function requestOpenApi(
   const response = await fetch(url, { method: options.method, headers, body });
   const contentType = response.headers.get("content-type") ?? "";
   const text = await readLimitedText(response, `Response from ${source.slug}`, MAX_UPSTREAM_RESPONSE_BYTES);
+  let data: unknown = text;
   if (contentType.includes("application/json")) {
     try {
-      return JSON.parse(text) as unknown;
+      data = JSON.parse(text) as unknown;
     } catch {
-      return text;
+      data = text;
     }
   }
-  return text;
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders(response.headers),
+    data
+  };
 }
 
 async function authHeaders(source: SourceConfig, encryptionKey?: string): Promise<Headers> {
@@ -135,10 +145,78 @@ function interpolatePath(path: string, params: RequestOptions["params"] = {}): s
   });
 }
 
-function inputSchemaForOperation(operation: Record<string, unknown>): unknown {
+export function inputSchemaForOperation(operation: Record<string, unknown>): unknown {
+  const parameters = Array.isArray(operation.parameters) ? (operation.parameters as Array<Record<string, unknown>>) : [];
+  const pathSchema = parametersSchema(parameters, "path");
+  const querySchema = parametersSchema(parameters, "query");
+  const headersSchema = parametersSchema(parameters, "header");
   const requestBody = operation.requestBody as Record<string, unknown> | undefined;
   const content = requestBody?.content as Record<string, { schema?: unknown }> | undefined;
-  return content?.["application/json"]?.schema ?? { type: "object" };
+  const jsonBody = content?.["application/json"]?.schema;
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  if (pathSchema) {
+    properties.params = pathSchema;
+    required.push("params");
+  }
+  if (querySchema) properties.query = querySchema;
+  if (headersSchema) properties.headers = headersSchema;
+  if (jsonBody) {
+    properties.body = jsonBody;
+    if (requestBody?.required === true) required.push("body");
+  }
+  if (content && !jsonBody) {
+    properties.body = { type: "string", description: `Request body. Supported content types: ${Object.keys(content).join(", ")}` };
+    properties.contentType = { type: "string", enum: Object.keys(content) };
+  }
+  return {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {})
+  };
+}
+
+export function rewriteInternalSchemaRefs(value: unknown, sourceSlug: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => rewriteInternalSchemaRefs(item, sourceSlug));
+  if (!value || typeof value !== "object") return value;
+  const rewritten: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    rewritten[key] =
+      key === "$ref" && typeof child === "string" && child.startsWith("#/components/schemas/")
+        ? `#/components/schemas/${sourceSlug}_${child.slice("#/components/schemas/".length)}`
+        : rewriteInternalSchemaRefs(child, sourceSlug);
+  }
+  return rewritten;
+}
+
+function parametersSchema(parameters: Array<Record<string, unknown>>, location: "path" | "query" | "header"): unknown | null {
+  const filtered = parameters.filter((parameter) => parameter.in === location && typeof parameter.name === "string");
+  if (filtered.length === 0) return null;
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  for (const parameter of filtered) {
+    const name = parameter.name as string;
+    properties[name] = {
+      ...((parameter.schema as Record<string, unknown> | undefined) ?? { type: "string" }),
+      ...(typeof parameter.description === "string" ? { description: parameter.description } : {})
+    };
+    if (parameter.required === true || location === "path") required.push(name);
+  }
+  return {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {})
+  };
+}
+
+function responseHeaders(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of headers.entries()) {
+    if (["content-type", "content-length", "retry-after", "x-request-id", "request-id"].includes(key.toLowerCase())) {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 async function readLimitedText(response: Response, label: string, maxBytes: number): Promise<string> {

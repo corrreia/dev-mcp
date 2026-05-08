@@ -36,13 +36,16 @@ export async function buildGatewayMcpServer(env: Env, ownerId: string | null): P
           name: "codemode",
           fns: {
             catalog: async (args: unknown) =>
-              searchCatalog(db, typeof args === "string" ? args : String(args), ownerId, { enabledOnly: true }),
+              searchCatalog(db, typeof args === "string" || (args && typeof args === "object") ? args : String(args), ownerId, {
+                enabledOnly: true
+              }),
             spec: async () => combinedSpec(env, ownerId),
             sources: async () =>
               (await listSources(db, ownerId)).map((source) => ({
                 slug: source.slug,
                 type: source.type,
-                name: source.name
+                name: source.name,
+                enabled: source.enabled
               }))
           },
           positionalArgs: true

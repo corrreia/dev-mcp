@@ -24,6 +24,7 @@ export interface RequestOptions {
   path: string;
   params?: Record<string, string | number | boolean | undefined>;
   query?: Record<string, string | number | boolean | undefined>;
+  headers?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
   contentType?: string;
   rawBody?: boolean;
@@ -35,6 +36,7 @@ export interface SearchResult {
   type: SourceType;
   kind: CatalogEntryKind;
   operation: string;
+  callName?: string;
   title: string;
   description?: string;
   inputSchema?: unknown;

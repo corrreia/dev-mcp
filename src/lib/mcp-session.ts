@@ -14,7 +14,17 @@ export class McpSession extends DurableObject<Env> {
     if (sessionId) {
       const existing = this.transports.get(sessionId);
       if (!existing) {
-        return jsonResponse({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found" }, id: null }, { status: 404 });
+        return jsonResponse(
+          {
+            jsonrpc: "2.0",
+            error: {
+              code: -32001,
+              message: "Session not found. Start a new MCP session; in-memory transports are not resumable after restart or close."
+            },
+            id: null
+          },
+          { status: 404 }
+        );
       }
       return existing.handleRequest(request);
     }

@@ -642,7 +642,7 @@ function SearchResultsTable({ results }: { results: SearchResult[] }) {
             {kindLabel(result.kind)}
           </span>
           <span className="min-w-0 truncate justify-self-end border border-hairline-strong bg-background/40 px-2 py-1 text-right font-mono text-[10px] uppercase tracking-[0.18em] text-acid">
-            {result.source}.{result.operation}
+            {result.callName ? `codemode.${result.callName}` : `${result.source}.${result.operation}`}
           </span>
         </div>
       ))}

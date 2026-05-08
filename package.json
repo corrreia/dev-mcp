@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev --host 0.0.0.0 --port 8787",
     "build": "npm run cf-typegen && vite build",
+    "test": "vitest run --config vitest.config.ts",
     "preview": "npm run build && wrangler dev --config dist/server/wrangler.json",
     "deploy": "npm run build && wrangler deploy --config dist/server/wrangler.json",
     "cf-typegen": "wrangler types worker-configuration.d.ts",
@@ -49,6 +50,7 @@
     "drizzle-kit": "^0.31.10",
     "typescript": "^5.8.0",
     "vite": "^7.0.0",
+    "vitest": "^4.1.5",
     "wrangler": "^4.40.0"
   },
   "overrides": {

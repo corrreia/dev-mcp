@@ -1,8 +1,9 @@
-import { and, eq, inArray, like, or } from "drizzle-orm";
+import { and, asc, eq, inArray, like, or } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "@/db/schema";
 import type { Env, SearchResult, SourceConfig, SourceType } from "@/types";
 import { encryptSecret } from "@/lib/crypto";
+import { assignCallNames } from "@/lib/gateway/names";
 import { parseJsonObject, safeJson } from "@/lib/json";
 import { catalogOpenApi, fetchOpenApiSpec } from "@/lib/openapi";
 
@@ -19,6 +20,15 @@ interface SourceInput {
   authHeaderName?: string;
   secret?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface CatalogSearchInput {
+  query?: string;
+  source?: string;
+  type?: SourceType;
+  kind?: SearchResult["kind"];
+  limit?: number;
+  match?: "any" | "all";
 }
 
 export async function listSources(db: Db, ownerId: string | null = null): Promise<SourceConfig[]> {
@@ -77,7 +87,11 @@ export async function refreshSourceCatalog(db: Db, env: Env, source: SourceConfi
     entries = await broker.listTools(source);
   }
 
-  await db.delete(schema.catalogEntries).where(eq(schema.catalogEntries.sourceId, source.id)).run();
+  const oldEntries = await db
+    .select({ id: schema.catalogEntries.id })
+    .from(schema.catalogEntries)
+    .where(eq(schema.catalogEntries.sourceId, source.id))
+    .orderBy(asc(schema.catalogEntries.id));
   for (const entry of entries) {
     await db
       .insert(schema.catalogEntries)
@@ -96,37 +110,67 @@ export async function refreshSourceCatalog(db: Db, env: Env, source: SourceConfi
       })
       .run();
   }
+  if (oldEntries.length > 0) {
+    await db.delete(schema.catalogEntries).where(inArray(schema.catalogEntries.id, oldEntries.map((entry) => entry.id))).run();
+  }
   return entries;
 }
 
 export async function searchCatalog(
   db: Db,
-  query: string,
+  input: string | CatalogSearchInput,
   ownerId: string | null = null,
   options: { enabledOnly?: boolean; limit?: number } = {}
 ): Promise<SearchResult[]> {
+  const parsed = typeof input === "string" ? { query: input } : input;
+  const query = parsed.query ?? "";
   const terms = query.trim().split(/\s+/).filter(Boolean).slice(0, 8);
   const ownerSources = ownerId ? await listSources(db, ownerId) : [];
   const allowedSourceIds = ownerId ? ownerSources.map((source) => source.id) : [];
   if (ownerId && allowedSourceIds.length === 0) return [];
 
   const textPredicate =
-    terms.length > 0 ? or(...terms.map((term) => like(schema.catalogEntries.searchText, `%${term}%`))) : undefined;
+    terms.length > 0
+      ? parsed.match === "all"
+        ? and(...terms.map((term) => like(schema.catalogEntries.searchText, `%${term}%`)))
+        : or(...terms.map((term) => like(schema.catalogEntries.searchText, `%${term}%`)))
+      : undefined;
   const ownerPredicate = ownerId ? inArray(schema.catalogEntries.sourceId, allowedSourceIds) : undefined;
   const enabledSourceIds = options.enabledOnly
     ? (ownerId ? ownerSources : await listSources(db)).filter((source) => source.enabled).map((source) => source.id)
     : [];
   if (options.enabledOnly && enabledSourceIds.length === 0) return [];
   const enabledPredicate = options.enabledOnly ? inArray(schema.catalogEntries.sourceId, enabledSourceIds) : undefined;
-  const predicates = [textPredicate, ownerPredicate, enabledPredicate].filter(Boolean);
+  const sourcePredicate = parsed.source ? eq(schema.catalogEntries.sourceSlug, parsed.source) : undefined;
+  const typePredicate = parsed.type ? eq(schema.catalogEntries.sourceType, parsed.type) : undefined;
+  const kindPredicate = parsed.kind ? eq(schema.catalogEntries.kind, parsed.kind) : undefined;
+  const predicates = [textPredicate, ownerPredicate, enabledPredicate, sourcePredicate, typePredicate, kindPredicate].filter(Boolean);
   const where = predicates.length > 0 ? and(...predicates) : undefined;
   const rows = await db
     .select()
     .from(schema.catalogEntries)
     .where(where)
-    .limit(options.limit ?? 100);
+    .orderBy(asc(schema.catalogEntries.sourceSlug), asc(schema.catalogEntries.operationKey), asc(schema.catalogEntries.id))
+    .limit(parsed.limit ?? options.limit ?? 100);
 
-  return Promise.all(rows.map(async (row) => catalogRowToResult(row)));
+  const results = await Promise.all(rows.map(async (row) => catalogRowToResult(row)));
+  const callablePredicates = [ownerPredicate, enabledPredicate].filter(Boolean);
+  const callableWhere = callablePredicates.length > 0 ? and(...callablePredicates) : undefined;
+  const allCallableRows = await db
+    .select()
+    .from(schema.catalogEntries)
+    .where(callableWhere)
+    .orderBy(asc(schema.catalogEntries.sourceSlug), asc(schema.catalogEntries.operationKey), asc(schema.catalogEntries.id));
+  const callableById = new Map(
+    assignCallNames((await Promise.all(allCallableRows.map(async (row) => catalogRowToResult(row)))).filter(isCallableEntry)).map((entry) => [
+      entry.id,
+      entry.callName
+    ])
+  );
+  return rankSearchResults(
+    results.map((result) => ({ ...result, callName: result.id ? callableById.get(result.id) : result.callName })),
+    terms
+  );
 }
 
 export async function listEnabledCatalogEntries(
@@ -138,9 +182,13 @@ export async function listEnabledCatalogEntries(
   const enabledSourceIds = ownerSources.filter((source) => source.enabled).map((source) => source.id);
   if (enabledSourceIds.length === 0) return [];
   const where = inArray(schema.catalogEntries.sourceId, enabledSourceIds);
-  const rows = await db.select().from(schema.catalogEntries).where(where);
+  const rows = await db
+    .select()
+    .from(schema.catalogEntries)
+    .where(where)
+    .orderBy(asc(schema.catalogEntries.sourceSlug), asc(schema.catalogEntries.operationKey), asc(schema.catalogEntries.id));
   const entries = await Promise.all(rows.map(async (row) => catalogRowToResult(row)));
-  return entries.filter((entry) => !kinds || kinds.includes(entry.kind));
+  return assignCallNames(entries.filter((entry) => !kinds || kinds.includes(entry.kind)));
 }
 
 export async function setSourceEnabled(db: Db, slug: string, enabled: boolean, ownerId: string | null = null): Promise<SourceConfig> {
@@ -193,6 +241,40 @@ function catalogRowToResult(row: typeof schema.catalogEntries.$inferSelect): Sea
     inputSchema: row.inputSchemaJson ? JSON.parse(row.inputSchemaJson) : undefined,
     executionRef: JSON.parse(row.executionRefJson) as unknown
   };
+}
+
+function isCallableEntry(entry: SearchResult): boolean {
+  return entry.kind === "openapi_operation" || entry.kind === "mcp_tool";
+}
+
+function rankSearchResults(results: SearchResult[], terms: string[]): SearchResult[] {
+  const lowerTerms = terms.map((term) => term.toLowerCase());
+  return results
+    .map((result, index) => ({ result, index, score: scoreResult(result, lowerTerms) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ result }) => result);
+}
+
+function scoreResult(result: SearchResult, terms: string[]): number {
+  if (terms.length === 0) return 0;
+  const title = result.title.toLowerCase();
+  const operation = result.operation.toLowerCase();
+  const source = result.source.toLowerCase();
+  const description = (result.description ?? "").toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    if (source === term) score += 50;
+    if (operation === term || result.callName?.toLowerCase() === term) score += 40;
+    if (title.includes(term)) score += 20;
+    if (operation.includes(term)) score += 15;
+    if (source.includes(term)) score += 12;
+    if (description.includes(term)) score += 4;
+  }
+  const matchedTerms = terms.filter(
+    (term) => title.includes(term) || operation.includes(term) || source.includes(term) || description.includes(term)
+  ).length;
+  if (matchedTerms === terms.length) score += 25;
+  return score;
 }
 
 function validateSource(input: SourceInput): void {

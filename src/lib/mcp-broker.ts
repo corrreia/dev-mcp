@@ -91,10 +91,11 @@ export class McpBroker extends DurableObject<Env> {
   ): Promise<T> {
     if (!source.baseUrl) throw new Error(`MCP source ${source.slug} does not have a URL`);
     const oauthProvider =
-      source.authType === "oauth" ? new SourceOAuthClientProvider(createDb(this.env.DB), this.env, source) : null;
+      source.authType === "oauth"
+        ? new SourceOAuthClientProvider(createDb(this.env.DB), this.env, source, { forceConsent: options.forceOAuth })
+        : null;
     if (oauthProvider && options.forceOAuth) {
-      await oauthProvider.invalidateCredentials("tokens");
-      await oauthProvider.invalidateCredentials("verifier");
+      await oauthProvider.invalidateCredentials("all");
     }
     const transport =
       source.authType === "oauth"

@@ -25,7 +25,8 @@ export class SourceOAuthClientProvider implements OAuthClientProvider {
   constructor(
     private readonly db: Db,
     private readonly env: Env,
-    private readonly source: SourceConfig
+    private readonly source: SourceConfig,
+    private readonly options: { forceConsent?: boolean } = {}
   ) {}
 
   get redirectUrl(): string {
@@ -38,7 +39,8 @@ export class SourceOAuthClientProvider implements OAuthClientProvider {
       redirect_uris: [this.redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      token_endpoint_auth_method: "none"
+      token_endpoint_auth_method: "none",
+      ...(this.oauthScope ? { scope: this.oauthScope } : {})
     };
   }
 
@@ -65,6 +67,10 @@ export class SourceOAuthClientProvider implements OAuthClientProvider {
   }
 
   redirectToAuthorization(authorizationUrl: URL): void {
+    if (this.options.forceConsent) {
+      authorizationUrl.searchParams.set("prompt", "consent");
+      authorizationUrl.searchParams.set("approval_prompt", "force");
+    }
     this.authorizationUrl = authorizationUrl;
   }
 
@@ -116,5 +122,10 @@ export class SourceOAuthClientProvider implements OAuthClientProvider {
   private async write(store: OAuthStore): Promise<void> {
     const encryptedSecret = await encryptSecret(JSON.stringify(store), this.env.ENCRYPTION_KEY);
     await this.db.update(schema.sources).set({ encryptedSecret }).where(eq(schema.sources.id, this.source.id)).run();
+  }
+
+  private get oauthScope(): string | null {
+    const scope = this.source.metadata.oauthScope ?? this.source.metadata.scope;
+    return typeof scope === "string" && scope.trim() ? scope.trim() : null;
   }
 }

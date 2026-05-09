@@ -26,8 +26,11 @@ app.post("/api/sources/:slug/oauth/start", async (c) => {
   const db = createDb(c.env.DB);
   const source = await getSourceBySlug(db, c.req.param("slug"), auth.userId);
   if (!source) return jsonResponse({ error: "source not found" }, { status: 404 });
+  if (!(source.type === "mcp" && source.authType === "oauth")) {
+    return jsonResponse({ error: "source is not an OAuth MCP source" }, { status: 400 });
+  }
   const broker = c.env.MCP_BROKER.getByName(auth.userId ?? "default");
-  return jsonResponse(await broker.connectSource(source));
+  return jsonResponse(await broker.connectSource(source, { forceOAuth: c.req.query("force") === "true" }));
 });
 
 app.get("/api/sources/:slug/oauth/callback", async (c) => {

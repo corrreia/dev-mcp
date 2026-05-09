@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Copy,
   Database,
+  KeyRound,
   Loader2,
   Plus,
   Power,
@@ -179,6 +180,16 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     }
   }
 
+  async function onReauth(slug: string) {
+    setStatus("");
+    setError("");
+    try {
+      await startSourceOAuth(slug, { force: true });
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }
+
   const counts = useMemo(
     () => ({
       total: sources.length,
@@ -245,7 +256,13 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </Button>
           }
         >
-          <SourcesTable sources={sources} onRefresh={onRefresh} onDelete={onDelete} onToggleEnabled={onSourceEnabledChange} />
+          <SourcesTable
+            sources={sources}
+            onRefresh={onRefresh}
+            onDelete={onDelete}
+            onToggleEnabled={onSourceEnabledChange}
+            onReauth={onReauth}
+          />
 
           <div className="mt-8 mb-6 ascii-divider">────── // QUERY ──────</div>
 
@@ -473,12 +490,14 @@ function SourcesTable({
   sources,
   onRefresh,
   onDelete,
-  onToggleEnabled
+  onToggleEnabled,
+  onReauth
 }: {
   sources: SourceConfig[];
   onRefresh: (slug: string) => Promise<void>;
   onDelete: (slug: string) => Promise<void>;
   onToggleEnabled: (slug: string, enabled: boolean) => Promise<void>;
+  onReauth: (slug: string) => Promise<void>;
 }) {
   if (sources.length === 0) {
     return (
@@ -491,7 +510,7 @@ function SourcesTable({
 
   return (
     <div className="overflow-x-auto border border-hairline">
-      <div className="grid min-w-[52rem] grid-cols-[2.4rem_minmax(0,1fr)_5rem_5rem_7rem_5rem] items-center gap-3 border-b border-hairline bg-background/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+      <div className="grid min-w-[56rem] grid-cols-[2.4rem_minmax(0,1fr)_5rem_5rem_7rem_7rem] items-center gap-3 border-b border-hairline bg-background/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
         <span>#</span>
         <span>source</span>
         <span>type</span>
@@ -502,7 +521,7 @@ function SourcesTable({
       {sources.map((source, idx) => (
         <div
           key={source.id}
-          className="group grid min-w-[52rem] grid-cols-[2.4rem_minmax(0,1fr)_5rem_5rem_7rem_5rem] items-center gap-3 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-card/60"
+          className="group grid min-w-[56rem] grid-cols-[2.4rem_minmax(0,1fr)_5rem_5rem_7rem_7rem] items-center gap-3 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-card/60"
         >
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {String(idx + 1).padStart(2, "0")}
@@ -534,6 +553,13 @@ function SourcesTable({
             onChange={(enabled) => onToggleEnabled(source.slug, enabled)}
           />
           <div className="flex items-center justify-end gap-1.5">
+            {source.authType === "oauth" ? (
+              <IconAction
+                label="reauthorize"
+                onClick={() => void onReauth(source.slug)}
+                icon={<KeyRound className="size-3.5" />}
+              />
+            ) : null}
             <IconAction
               label="refresh"
               onClick={() => void onRefresh(source.slug)}
@@ -1116,9 +1142,10 @@ async function logout(): Promise<void> {
   window.location.href = "/login";
 }
 
-async function startSourceOAuth(slug: string): Promise<void> {
+async function startSourceOAuth(slug: string, options: { force?: boolean } = {}): Promise<void> {
+  const suffix = options.force ? "?force=true" : "";
   const response = await requestJson<{ status: "connected" | "auth_required"; authUrl?: string }>(
-    `/api/sources/${encodeURIComponent(slug)}/oauth/start`,
+    `/api/sources/${encodeURIComponent(slug)}/oauth/start${suffix}`,
     { method: "POST" }
   );
   if (response.status === "connected") {
